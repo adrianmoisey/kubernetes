@@ -282,6 +282,7 @@ func (*fakeKubelet) ImageFsStats(_ context.Context) (*statsapi.FsStats, *statsap
 	return nil, nil, nil
 }
 func (*fakeKubelet) RlimitStats() (*statsapi.RlimitStats, error) { return nil, nil }
+func (*fakeKubelet) TCPMemStats() (*statsapi.TCPMemStats, error) { return nil, nil }
 func (*fakeKubelet) GetCgroupStats(cgroupName string, updateStats bool) (*statsapi.ContainerStats, *statsapi.NetworkStats, error) {
 	return nil, nil, nil
 }

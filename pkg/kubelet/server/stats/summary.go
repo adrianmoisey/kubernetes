@@ -101,6 +101,11 @@ func (sp *summaryProviderImpl) Get(ctx context.Context, updateStats bool) (*stat
 		return nil, fmt.Errorf("failed to get rlimit stats: %v", err)
 	}
 
+	tcpmemlimit, err := sp.provider.TCPMemStats()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tcpmem stats: %v", err)
+	}
+
 	nodeStats := statsapi.NodeStats{
 		NodeName:         node.Name,
 		CPU:              rootStats.CPU,
@@ -111,6 +116,7 @@ func (sp *summaryProviderImpl) Get(ctx context.Context, updateStats bool) (*stat
 		Fs:               rootFsStats,
 		Runtime:          &statsapi.RuntimeStats{ContainerFs: containerFsStats, ImageFs: imageFsStats},
 		Rlimit:           rlimit,
+		TCPMem:           tcpmemlimit,
 		SystemContainers: sp.GetSystemContainersStats(nodeConfig, podStats, updateStats),
 	}
 	summary := statsapi.Summary{

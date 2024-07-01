@@ -28,6 +28,7 @@ import (
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/kubelet/server/stats"
 	"k8s.io/kubernetes/pkg/kubelet/stats/pidlimit"
+	"k8s.io/kubernetes/pkg/kubelet/stats/tcpmem"
 	"k8s.io/kubernetes/pkg/kubelet/status"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/utils/ptr"
@@ -106,6 +107,11 @@ type containerStatsProvider interface {
 // RlimitStats returns base information about process count
 func (p *Provider) RlimitStats() (*statsapi.RlimitStats, error) {
 	return pidlimit.Stats()
+}
+
+// TCPMemStats returns base information about process count
+func (p *Provider) TCPMemStats() (*statsapi.TCPMemStats, error) {
+	return tcpmem.Stats()
 }
 
 // GetCgroupStats returns the stats of the cgroup with the cgroupName. Note that

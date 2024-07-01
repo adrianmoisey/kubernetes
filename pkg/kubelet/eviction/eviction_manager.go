@@ -238,6 +238,13 @@ func (m *managerImpl) IsUnderPIDPressure() bool {
 	return hasNodeCondition(m.nodeConditions, v1.NodePIDPressure)
 }
 
+// IsUnderTCPMemPressure returns true if the node is under TCP pressure.
+func (m *managerImpl) IsUnderTCPMemPressure() bool {
+	m.RLock()
+	defer m.RUnlock()
+	return hasNodeCondition(m.nodeConditions, v1.NodeTCPMemPressure)
+}
+
 // synchronize is the main control loop that enforces eviction thresholds.
 // Returns the pod that was killed, or nil if no pod was killed.
 func (m *managerImpl) synchronize(diskInfoProvider DiskInfoProvider, podFunc ActivePodsFunc) ([]*v1.Pod, error) {

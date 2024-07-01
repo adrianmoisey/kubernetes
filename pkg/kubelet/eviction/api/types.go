@@ -55,6 +55,8 @@ const (
 	SignalAllocatableMemoryAvailable Signal = "allocatableMemory.available"
 	// SignalPIDAvailable is amount of PID available for pod allocation
 	SignalPIDAvailable Signal = "pid.available"
+	// SignalTCPMemAvailable is amount of TCP Memory available for pod allocation
+	SignalTCPMemAvailable Signal = "tcpmem.available"
 )
 
 // ThresholdOperator is the operator used to express a Threshold.
@@ -82,6 +84,7 @@ var OpForSignal = map[Signal]ThresholdOperator{
 	SignalContainerFsInodesFree:      OpLessThan,
 	SignalAllocatableMemoryAvailable: OpLessThan,
 	SignalPIDAvailable:               OpLessThan,
+	SignalTCPMemAvailable:            OpLessThan,
 }
 
 // ThresholdValue is a value holder that abstracts literal versus percentage based quantity

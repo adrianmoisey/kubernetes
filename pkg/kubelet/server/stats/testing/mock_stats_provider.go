@@ -301,6 +301,22 @@ func (mr *MockProviderMockRecorder) RlimitStats() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RlimitStats", reflect.TypeOf((*MockProvider)(nil).RlimitStats))
 }
 
+// TCPMemStats mocks base method.
+func (m *MockProvider) TCPMemStats() (*v1alpha1.TCPMemStats, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TCPMemStats")
+	ret0, _ := ret[0].(*v1alpha1.TCPMemStats)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// TCPMemStats indicates an expected call of TCPMemStats.
+func (mr *MockProviderMockRecorder) TCPMemStats() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TCPMemStats", reflect.TypeOf((*MockProvider)(nil).TCPMemStats))
+}
+
+
 // RootFsStats mocks base method.
 func (m *MockProvider) RootFsStats() (*v1alpha1.FsStats, error) {
 	m.ctrl.T.Helper()

@@ -69,6 +69,9 @@ type Manager interface {
 
 	// IsUnderPIDPressure returns true if the node is under PID pressure.
 	IsUnderPIDPressure() bool
+
+	// IsUnderTCPMemPressure returns true if the node is under TCP pressure.
+	IsUnderTCPMemPressure() bool
 }
 
 // DiskInfoProvider is responsible for informing the manager how disk is configured.

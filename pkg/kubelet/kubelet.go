@@ -1378,6 +1378,11 @@ func (kl *Kubelet) RlimitStats() (*statsapi.RlimitStats, error) {
 	return kl.StatsProvider.RlimitStats()
 }
 
+// TCPMemStats is delegated to StatsProvider, which implements stats.Provider interface
+func (kl *Kubelet) TCPMemStats() (*statsapi.TCPMemStats, error) {
+	return kl.StatsProvider.TCPMemStats()
+}
+
 // setupDataDirs creates:
 // 1.  the root directory
 // 2.  the pods directory

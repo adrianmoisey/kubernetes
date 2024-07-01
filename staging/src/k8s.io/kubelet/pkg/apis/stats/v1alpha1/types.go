@@ -59,6 +59,11 @@ type NodeStats struct {
 	// Stats about the rlimit of system.
 	// +optional
 	Rlimit *RlimitStats `json:"rlimit,omitempty"`
+
+	// FIXME Stats about the rlimit of system.
+	// +optional
+	TCPMem *TCPMemStats `json:"tcp_mem,omitempty"`
+
 	// Stats pertaining to swap resources. This is reported to non-windows systems only.
 	// +optional
 	Swap *SwapStats `json:"swap,omitempty"`
@@ -74,6 +79,13 @@ type RlimitStats struct {
 	MaxPID *int64 `json:"maxpid,omitempty"`
 	// The number of running process (threads, precisely on Linux) in the OS.
 	NumOfRunningProcesses *int64 `json:"curproc,omitempty"`
+}
+
+// TCPMem are stats rlimit of OS.
+type TCPMemStats struct {
+	Time       metav1.Time `json:"time"`
+	MaxTCP     *int64      `json:"maxtcp,omitempty"`
+	CurrentMem *int64      `json:"curmem,omitempty"`
 }
 
 // RuntimeStats are stats pertaining to the underlying container runtime.

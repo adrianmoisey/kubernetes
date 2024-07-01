@@ -273,6 +273,14 @@ func TestUpdateNewNodeStatus(t *testing.T) {
 							LastTransitionTime: metav1.Time{},
 						},
 						{
+							Type:               v1.NodeTCPMemPressure,
+							Status:             v1.ConditionFalse,
+							Reason:             "KubeletHasSufficientTCPMem",
+							Message:            "kubelet has sufficient TCP Socket memory available",
+							LastHeartbeatTime:  metav1.Time{},
+							LastTransitionTime: metav1.Time{},
+						},
+						{
 							Type:               v1.NodeReady,
 							Status:             v1.ConditionTrue,
 							Reason:             "KubeletReady",
@@ -392,6 +400,14 @@ func TestUpdateExistingNodeStatus(t *testing.T) {
 					LastTransitionTime: metav1.Date(2012, 1, 1, 0, 0, 0, 0, time.UTC),
 				},
 				{
+					Type:               v1.NodeTCPMemPressure,
+					Status:             v1.ConditionFalse,
+					Reason:             "TCPMemPressure",
+					Message:            fmt.Sprintf("kubelet has sufficient TCP Socket memory available"),
+					LastHeartbeatTime:  metav1.Date(2012, 1, 1, 0, 0, 0, 0, time.UTC),
+					LastTransitionTime: metav1.Date(2012, 1, 1, 0, 0, 0, 0, time.UTC),
+				},
+				{
 					Type:               v1.NodeReady,
 					Status:             v1.ConditionTrue,
 					Reason:             "KubeletReady",
@@ -452,6 +468,15 @@ func TestUpdateExistingNodeStatus(t *testing.T) {
 					LastHeartbeatTime:  metav1.Time{},
 					LastTransitionTime: metav1.Time{},
 				},
+				{
+					Type:               v1.NodeTCPMemPressure,
+					Status:             v1.ConditionFalse,
+					Reason:             "TCPMemPressure",
+					Message:            fmt.Sprintf("kubelet has sufficient TCP Socket memory available"),
+					LastHeartbeatTime:  metav1.Time{},
+					LastTransitionTime: metav1.Time{},
+				},
+
 				{
 					Type:               v1.NodeReady,
 					Status:             v1.ConditionTrue,
@@ -665,6 +690,15 @@ func TestUpdateNodeStatusWithRuntimeStateError(t *testing.T) {
 					LastHeartbeatTime:  metav1.Time{},
 					LastTransitionTime: metav1.Time{},
 				},
+				{
+					Type:               v1.NodeTCPMemPressure,
+					Status:             v1.ConditionFalse,
+					Reason:             "KubeletHasSufficientTCPMem",
+					Message:            fmt.Sprintf("kubelet has sufficient TCP Socket memory available"),
+					LastHeartbeatTime:  metav1.Time{},
+					LastTransitionTime: metav1.Time{},
+				},
+
 				{}, //placeholder
 			},
 			NodeInfo: v1.NodeSystemInfo{
@@ -889,6 +923,15 @@ func TestUpdateNodeStatusWithLease(t *testing.T) {
 					LastHeartbeatTime:  now,
 					LastTransitionTime: now,
 				},
+				{
+					Type:               v1.NodeTCPMemPressure,
+					Status:             v1.ConditionFalse,
+					Reason:             "KubeletHasSufficientTCPMem",
+					Message:            fmt.Sprintf("kubelet has sufficient TCP Socket memory available"),
+					LastHeartbeatTime:  now,
+					LastTransitionTime: now,
+				},
+
 				{
 					Type:               v1.NodeReady,
 					Status:             v1.ConditionTrue,

@@ -6022,6 +6022,9 @@ const (
 	NodeDiskPressure NodeConditionType = "DiskPressure"
 	// NodePIDPressure means the kubelet is under pressure due to insufficient available PID.
 	NodePIDPressure NodeConditionType = "PIDPressure"
+	// NodeTCPMemPressure means the kubelet is under pressure due to insufficient available TCP memory.
+	NodeTCPMemPressure NodeConditionType = "TCPMemPressure"
+
 	// NodeNetworkUnavailable means that network for the node is not correctly configured.
 	NodeNetworkUnavailable NodeConditionType = "NetworkUnavailable"
 )
