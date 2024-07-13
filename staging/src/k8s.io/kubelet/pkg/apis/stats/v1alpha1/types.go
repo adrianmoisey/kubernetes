@@ -84,7 +84,7 @@ type RlimitStats struct {
 // TCPMem are stats rlimit of OS.
 type TCPMemStats struct {
 	Time       metav1.Time `json:"time"`
-	MaxTCP     *int64      `json:"maxtcp,omitempty"`
+	MaxMem     *int64      `json:"maxtcp,omitempty"`
 	CurrentMem *int64      `json:"curmem,omitempty"`
 }
 

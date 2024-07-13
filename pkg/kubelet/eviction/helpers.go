@@ -926,11 +926,11 @@ func makeSignalObservations(summary *statsapi.Summary) (signalObservations, stat
 	}
 
 	if tcpmemlimit := summary.Node.TCPMem; tcpmemlimit != nil {
-		if tcpmemlimit.CurrentMem != nil && tcpmemlimit.MaxTCP != nil {
-			available := int64(*tcpmemlimit.MaxTCP) - int64(*tcpmemlimit.CurrentMem)
+		if tcpmemlimit.CurrentMem != nil && tcpmemlimit.MaxMem != nil {
+			available := int64(*tcpmemlimit.MaxMem) - int64(*tcpmemlimit.CurrentMem)
 			result[evictionapi.SignalTCPMemAvailable] = signalObservation{
 				available: resource.NewQuantity(available, resource.DecimalSI),
-				capacity:  resource.NewQuantity(int64(*tcpmemlimit.MaxTCP), resource.DecimalSI),
+				capacity:  resource.NewQuantity(int64(*tcpmemlimit.MaxMem), resource.DecimalSI),
 				time:      tcpmemlimit.Time,
 			}
 		}

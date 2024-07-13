@@ -30,68 +30,66 @@ import (
 	statsapi "k8s.io/kubelet/pkg/apis/stats/v1alpha1"
 )
 
-// Stats provides basic information about max and current process count
-func Stats() (*statsapi.TCPMemStats, error) {
-	tcpmem := &statsapi.TCPMemStats{}
+type readFileFunc func(string) ([]byte, error)
 
-	TCPMemFile := "/proc/sys/net/ipv4"
-
-	memMax := int64(-1)
-	if content, err := os.ReadFile(TCPMemFile); err == nil {
-		if limit, err := strconv.ParseInt(string(content[:len(content)-1]), 10, 64); err == nil {
-			memMax = limit
-		}
-	}
-	// Both reads did not fail.
-	if memMax >= 0 {
-		tcpmem.MaxTCP = &memMax
+func fetchTCPMax(readFile readFileFunc) (*int64, error) {
+	// https://www.kernel.org/doc/Documentation/networking/ip-sysctl.txt
+	tcpMemFile := "/proc/sys/net/ipv4/tcp_mem"
+	fileContent, err := readFile(tcpMemFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %s", err.Error())
 	}
 
-	if mem, err := runningTaskCount(); err == nil {
-		tcpmem.CurrentMem = &mem
+	splitTcpMem := strings.Split(string(fileContent), "\t")
+	tcpMemMax := splitTcpMem[len(splitTcpMem)-1]
+
+	limit, err := strconv.ParseInt(tcpMemMax, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to process file: %s", err.Error())
 	}
-	/*
-		else {
-			var info syscall.Sysinfo_t
-			syscall.Sysinfo(&info)
-			procs := int64(info.Procs)
-			tcpmem.CurrentMem = &procs
-		}
-	*/
 
-	tcpmem.Time = v1.NewTime(time.Now())
-
-	return tcpmem, nil
+	return &limit, nil
 }
 
-func runningTaskCount() (int64, error) {
-	/*
-		sockets: used 555
-		TCP: inuse 54 orphan 0 tw 6 alloc 131 mem 282
-		UDP: inuse 94 mem 108
-		UDPLITE: inuse 0
-		RAW: inuse 0
-		FRAG: inuse 0 memory 0
-	*/
-	SockStatFile := "/proc/net/sockstat"
+func memoryUsedTCP(readFile readFileFunc) (*int64, error) {
+	// https://github.com/torvalds/linux/blob/v6.9/net/ipv4/proc.c#L60-L63
+	sockStatFile := "/proc/net/sockstat"
 
-	bytes, err := os.ReadFile(SockStatFile)
+	bytes, err := readFile(sockStatFile)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	lines := strings.Split(string(bytes), "\n")
-	tcp_line := ""
+	tcpLine := ""
 
 	for _, line := range lines {
 		if strings.HasPrefix(line, "TCP") {
-			tcp_line = line
+			tcpLine = line
 			break
 		}
 	}
 
-	fields := strings.Fields(tcp_line)
+	fields := strings.Fields(tcpLine)
 	if len(fields) < 11 {
-		return 0, fmt.Errorf("not enough fields in /proc/net/sockstat on the TCP line")
+		return nil, fmt.Errorf("not enough fields in /proc/net/sockstat on the TCP line")
 	}
-	return strconv.ParseInt(fields[len(fields)-1], 10, 64)
+	usedMem, err := strconv.ParseInt(fields[len(fields)-1], 10, 64)
+
+	return &usedMem, err
+}
+func Stats() (*statsapi.TCPMemStats, error) {
+
+	tcpmem := &statsapi.TCPMemStats{}
+
+	if memMax, err := fetchTCPMax(os.ReadFile); err == nil {
+		tcpmem.MaxMem = memMax
+	}
+
+	if mem, err := memoryUsedTCP(os.ReadFile); err == nil {
+		tcpmem.CurrentMem = mem
+	}
+
+	tcpmem.Time = v1.NewTime(time.Now())
+
+	return tcpmem, nil
 }
