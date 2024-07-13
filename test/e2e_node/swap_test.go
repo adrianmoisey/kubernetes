@@ -56,8 +56,9 @@ var (
 	noLimits *resource.Quantity = nil
 )
 
-var _ = SIGDescribe("Swap", "[LinuxOnly]", nodefeature.Swap, func() {
+var _ = SIGDescribe("Swap", "[LinuxOnly]", nodefeature.Swap, framework.WithSerial(), func() {
 	f := framework.NewDefaultFramework("swap-qos")
+	addAfterEachForCleaningUpPods(f)
 	f.NamespacePodSecurityLevel = admissionapi.LevelBaseline
 
 	ginkgo.BeforeEach(func() {
@@ -153,7 +154,9 @@ var _ = SIGDescribe("Swap", "[LinuxOnly]", nodefeature.Swap, func() {
 				gomega.Expect(nodeUsedMemory.IsZero()).To(gomega.BeFalseBecause("node used memory is zero"))
 
 				swapCapacity = getSwapCapacity(f, sleepingPod)
-				gomega.Expect(swapCapacity.IsZero()).To(gomega.BeFalseBecause("node swap capacity is zero"))
+				if swapCapacity.IsZero() {
+					e2eskipper.Skipf("swap is not provisioned on the node")
+				}
 
 				err := podClient.Delete(context.Background(), sleepingPod.Name, metav1.DeleteOptions{})
 				framework.ExpectNoError(err)

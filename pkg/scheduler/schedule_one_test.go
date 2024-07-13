@@ -407,7 +407,7 @@ func TestSchedulerMultipleProfilesScheduling(t *testing.T) {
 	// profiles, each with a different node in the filter configuration.
 	objs := append([]runtime.Object{
 		&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ""}}}, nodes...)
-	client := clientsetfake.NewSimpleClientset(objs...)
+	client := clientsetfake.NewClientset(objs...)
 	broadcaster := events.NewBroadcaster(&events.EventSinkImpl{Interface: client.EventsV1()})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -547,7 +547,7 @@ func TestSchedulerGuaranteeNonNilNodeInSchedulingCycle(t *testing.T) {
 	objs := []runtime.Object{&v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: fakeNamespace}}}
 	objs = append(objs, initialNodes...)
 	objs = append(objs, initialPods...)
-	client := clientsetfake.NewSimpleClientset(objs...)
+	client := clientsetfake.NewClientset(objs...)
 	broadcaster := events.NewBroadcaster(&events.EventSinkImpl{Interface: client.EventsV1()})
 
 	informerFactory := informers.NewSharedInformerFactory(client, 0)
@@ -645,7 +645,7 @@ func TestSchedulerGuaranteeNonNilNodeInSchedulingCycle(t *testing.T) {
 
 func TestSchedulerScheduleOne(t *testing.T) {
 	testNode := v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1", UID: types.UID("node1")}}
-	client := clientsetfake.NewSimpleClientset(&testNode)
+	client := clientsetfake.NewClientset(&testNode)
 	eventBroadcaster := events.NewBroadcaster(&events.EventSinkImpl{Interface: client.EventsV1()})
 	errS := errors.New("scheduler")
 	errB := errors.New("binder")
@@ -760,7 +760,7 @@ func TestSchedulerScheduleOne(t *testing.T) {
 					return pod.UID == gotAssumedPod.UID
 				},
 			}
-			client := clientsetfake.NewSimpleClientset(item.sendPod)
+			client := clientsetfake.NewClientset(item.sendPod)
 			client.PrependReactor("create", "pods", func(action clienttesting.Action) (bool, runtime.Object, error) {
 				if action.GetSubresource() != "binding" {
 					return false, nil, nil
@@ -937,7 +937,6 @@ func TestSchedulerNoPhantomPodAfterDelete(t *testing.T) {
 					node.Name: framework.NewStatus(framework.Unschedulable, nodeports.ErrReason).WithPlugin(nodeports.Name),
 				},
 				UnschedulablePlugins: sets.New(nodeports.Name),
-				EvaluatedNodes:       1,
 			},
 		}
 		if !reflect.DeepEqual(expectErr, err) {
@@ -1032,7 +1031,7 @@ func TestSchedulerFailedSchedulingReasons(t *testing.T) {
 		tf.RegisterPluginAsExtensions(noderesources.Name, frameworkruntime.FactoryAdapter(feature.Features{}, noderesources.NewFit), "Filter", "PreFilter"),
 	}
 
-	informerFactory := informers.NewSharedInformerFactory(clientsetfake.NewSimpleClientset(objects...), 0)
+	informerFactory := informers.NewSharedInformerFactory(clientsetfake.NewClientset(objects...), 0)
 	scheduler, _, errChan := setupTestScheduler(ctx, t, queuedPodStore, scache, informerFactory, nil, fns...)
 
 	queuedPodStore.Add(podWithTooBigResourceRequests)
@@ -1045,7 +1044,6 @@ func TestSchedulerFailedSchedulingReasons(t *testing.T) {
 			Diagnosis: framework.Diagnosis{
 				NodeToStatusMap:      failedNodeStatues,
 				UnschedulablePlugins: sets.New(noderesources.Name),
-				EvaluatedNodes:       100,
 			},
 		}
 		if len(fmt.Sprint(expectErr)) > 150 {
@@ -1063,7 +1061,7 @@ func TestSchedulerWithVolumeBinding(t *testing.T) {
 	findErr := fmt.Errorf("find err")
 	assumeErr := fmt.Errorf("assume err")
 	bindErr := fmt.Errorf("bind err")
-	client := clientsetfake.NewSimpleClientset()
+	client := clientsetfake.NewClientset()
 
 	eventBroadcaster := events.NewBroadcaster(&events.EventSinkImpl{Interface: client.EventsV1()})
 
@@ -1255,7 +1253,7 @@ func TestSchedulerBinding(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			pod := st.MakePod().Name(test.podName).Obj()
 			defaultBound := false
-			client := clientsetfake.NewSimpleClientset(pod)
+			client := clientsetfake.NewClientset(pod)
 			client.PrependReactor("create", "pods", func(action clienttesting.Action) (bool, runtime.Object, error) {
 				if action.GetSubresource() == "binding" {
 					defaultBound = true
@@ -1833,7 +1831,6 @@ func TestSchedulerSchedulePod(t *testing.T) {
 						"node2": framework.NewStatus(framework.Unschedulable, tf.ErrReasonFake).WithPlugin("FalseFilter"),
 					},
 					UnschedulablePlugins: sets.New("FalseFilter"),
-					EvaluatedNodes:       2,
 				},
 			},
 		},
@@ -1924,7 +1921,6 @@ func TestSchedulerSchedulePod(t *testing.T) {
 						"1": framework.NewStatus(framework.Unschedulable, tf.ErrReasonFake).WithPlugin("FalseFilter"),
 					},
 					UnschedulablePlugins: sets.New("FalseFilter"),
-					EvaluatedNodes:       3,
 				},
 			},
 		},
@@ -1951,7 +1947,6 @@ func TestSchedulerSchedulePod(t *testing.T) {
 						"2": framework.NewStatus(framework.Unschedulable, tf.ErrReasonFake).WithPlugin("NoPodsFilter"),
 					},
 					UnschedulablePlugins: sets.New("MatchFilter", "NoPodsFilter"),
-					EvaluatedNodes:       2,
 				},
 			},
 		},
@@ -2117,7 +2112,6 @@ func TestSchedulerSchedulePod(t *testing.T) {
 						"3": framework.NewStatus(framework.Unschedulable, "injecting failure for pod test-filter").WithPlugin("FakeFilter"),
 					},
 					UnschedulablePlugins: sets.New("FakeFilter"),
-					EvaluatedNodes:       1,
 				},
 			},
 		},
@@ -2151,7 +2145,6 @@ func TestSchedulerSchedulePod(t *testing.T) {
 						"3": framework.NewStatus(framework.Unschedulable, "injecting failure for pod test-filter").WithPlugin("FakeFilter"),
 					},
 					UnschedulablePlugins: sets.New("FakeFilter", framework.ExtenderName),
-					EvaluatedNodes:       3,
 				},
 			},
 		},
@@ -2177,7 +2170,6 @@ func TestSchedulerSchedulePod(t *testing.T) {
 						"3": framework.NewStatus(framework.UnschedulableAndUnresolvable, "injecting failure for pod test-filter").WithPlugin("FakeFilter"),
 					},
 					UnschedulablePlugins: sets.New("FakeFilter"),
-					EvaluatedNodes:       1,
 				},
 			},
 		},
@@ -2256,9 +2248,10 @@ func TestSchedulerSchedulePod(t *testing.T) {
 				),
 				tf.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 			},
-			nodes:              []string{"node1", "node2", "node3"},
-			pod:                st.MakePod().Name("test-prefilter").UID("test-prefilter").Obj(),
-			wantNodes:          sets.New("node2"),
+			nodes:     []string{"node1", "node2", "node3"},
+			pod:       st.MakePod().Name("test-prefilter").UID("test-prefilter").Obj(),
+			wantNodes: sets.New("node2"),
+			// since this case has no score plugin, we'll only try to find one node in Filter stage
 			wantEvaluatedNodes: ptr.To[int32](1),
 		},
 		{
@@ -2290,7 +2283,7 @@ func TestSchedulerSchedulePod(t *testing.T) {
 						"node2": framework.NewStatus(framework.UnschedulableAndUnresolvable, "node(s) didn't satisfy plugin(s) [FakePreFilter2 FakePreFilter3] simultaneously"),
 						"node3": framework.NewStatus(framework.UnschedulableAndUnresolvable, "node(s) didn't satisfy plugin(s) [FakePreFilter2 FakePreFilter3] simultaneously"),
 					},
-					UnschedulablePlugins: sets.Set[string]{},
+					UnschedulablePlugins: sets.New("FakePreFilter2", "FakePreFilter3"),
 					PreFilterMsg:         "node(s) didn't satisfy plugin(s) [FakePreFilter2 FakePreFilter3] simultaneously",
 				},
 			},
@@ -2318,7 +2311,7 @@ func TestSchedulerSchedulePod(t *testing.T) {
 					NodeToStatusMap: framework.NodeToStatusMap{
 						"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, "node(s) didn't satisfy plugin FakePreFilter2"),
 					},
-					UnschedulablePlugins: sets.Set[string]{},
+					UnschedulablePlugins: sets.New("FakePreFilter2"),
 					PreFilterMsg:         "node(s) didn't satisfy plugin FakePreFilter2",
 				},
 			},
@@ -2344,11 +2337,9 @@ func TestSchedulerSchedulePod(t *testing.T) {
 				NumAllNodes: 2,
 				Diagnosis: framework.Diagnosis{
 					NodeToStatusMap: framework.NodeToStatusMap{
-						"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, "node is filtered out by the prefilter result"),
 						"node2": framework.NewStatus(framework.Unschedulable, "injecting failure for pod test-prefilter").WithPlugin("FakeFilter"),
 					},
-					UnschedulablePlugins: sets.New("FakeFilter"),
-					EvaluatedNodes:       1,
+					UnschedulablePlugins: sets.New("FakePreFilter", "FakeFilter"),
 					PreFilterMsg:         "",
 				},
 			},
@@ -2453,10 +2444,8 @@ func TestSchedulerSchedulePod(t *testing.T) {
 				Pod:         st.MakePod().Name("test-prefilter").UID("test-prefilter").Obj(),
 				NumAllNodes: 2,
 				Diagnosis: framework.Diagnosis{
-					NodeToStatusMap: framework.NodeToStatusMap{
-						"1": framework.NewStatus(framework.UnschedulableAndUnresolvable, "node is filtered out by the prefilter result"),
-						"2": framework.NewStatus(framework.UnschedulableAndUnresolvable, "node is filtered out by the prefilter result"),
-					},
+					NodeToStatusMap:      framework.NodeToStatusMap{},
+					UnschedulablePlugins: sets.New("FakePreFilter"),
 				},
 			},
 		},
@@ -2478,7 +2467,7 @@ func TestSchedulerSchedulePod(t *testing.T) {
 				cache.AddNode(logger, node)
 			}
 
-			cs := clientsetfake.NewSimpleClientset()
+			cs := clientsetfake.NewClientset()
 			informerFactory := informers.NewSharedInformerFactory(cs, 0)
 			for _, pvc := range test.pvcs {
 				metav1.SetMetaDataAnnotation(&pvc.ObjectMeta, volume.AnnBindCompleted, "true")
@@ -2575,7 +2564,6 @@ func TestFindFitAllError(t *testing.T) {
 			"3": framework.NewStatus(framework.Unschedulable, tf.ErrReasonFake).WithPlugin("MatchFilter"),
 		},
 		UnschedulablePlugins: sets.New("MatchFilter"),
-		EvaluatedNodes:       3,
 	}
 	if diff := cmp.Diff(diagnosis, expected); diff != "" {
 		t.Errorf("Unexpected diagnosis: (-want, +got): %s", diff)
@@ -2797,7 +2785,7 @@ func TestZeroRequest(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			client := clientsetfake.NewSimpleClientset()
+			client := clientsetfake.NewClientset()
 			informerFactory := informers.NewSharedInformerFactory(client, 0)
 
 			snapshot := internalcache.NewSnapshot(test.pods, test.nodes)
@@ -3200,7 +3188,7 @@ func Test_prioritizeNodes(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			client := clientsetfake.NewSimpleClientset()
+			client := clientsetfake.NewClientset()
 			informerFactory := informers.NewSharedInformerFactory(client, 0)
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -3396,7 +3384,7 @@ func TestPreferNominatedNodeFilterCallCounts(t *testing.T) {
 
 			// create three nodes in the cluster.
 			nodes := makeNodeList([]string{"node1", "node2", "node3"})
-			client := clientsetfake.NewSimpleClientset(test.pod)
+			client := clientsetfake.NewClientset(test.pod)
 			informerFactory := informers.NewSharedInformerFactory(client, 0)
 			cache := internalcache.New(ctx, time.Duration(0))
 			for _, n := range nodes {
@@ -3547,7 +3535,7 @@ func setupTestSchedulerWithOnePodOnNode(ctx context.Context, t *testing.T, queue
 // scache: scheduler cache that might contain assumed pods.
 func setupTestScheduler(ctx context.Context, t *testing.T, queuedPodStore *clientcache.FIFO, cache internalcache.Cache, informerFactory informers.SharedInformerFactory, broadcaster events.EventBroadcaster, fns ...tf.RegisterPluginFunc) (*Scheduler, chan *v1.Binding, chan error) {
 	bindingChan := make(chan *v1.Binding, 1)
-	client := clientsetfake.NewSimpleClientset()
+	client := clientsetfake.NewClientset()
 	client.PrependReactor("create", "pods", func(action clienttesting.Action) (bool, runtime.Object, error) {
 		var b *v1.Binding
 		if action.GetSubresource() == "binding" {
@@ -3565,7 +3553,7 @@ func setupTestScheduler(ctx context.Context, t *testing.T, queuedPodStore *clien
 	}
 
 	if informerFactory == nil {
-		informerFactory = informers.NewSharedInformerFactory(clientsetfake.NewSimpleClientset(), 0)
+		informerFactory = informers.NewSharedInformerFactory(clientsetfake.NewClientset(), 0)
 	}
 	schedulingQueue := internalqueue.NewTestQueueWithInformerFactory(ctx, nil, informerFactory)
 	waitingPods := frameworkruntime.NewWaitingPodsMap()
@@ -3617,7 +3605,7 @@ func setupTestSchedulerWithVolumeBinding(ctx context.Context, t *testing.T, volu
 	scache := internalcache.New(ctx, 10*time.Minute)
 	scache.AddNode(logger, &testNode)
 	testPVC := v1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "testPVC", Namespace: pod.Namespace, UID: types.UID("testPVC")}}
-	client := clientsetfake.NewSimpleClientset(&testNode, &testPVC)
+	client := clientsetfake.NewClientset(&testNode, &testPVC)
 	informerFactory := informers.NewSharedInformerFactory(client, 0)
 	pvcInformer := informerFactory.Core().V1().PersistentVolumeClaims()
 	pvcInformer.Informer().GetStore().Add(&testPVC)

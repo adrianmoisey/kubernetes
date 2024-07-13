@@ -330,8 +330,6 @@ type JobSpec struct {
 	// checked against the backoffLimit. This field cannot be used in combination
 	// with .spec.podTemplate.spec.restartPolicy=OnFailure.
 	//
-	// This field is beta-level. It can be used when the `JobPodFailurePolicy`
-	// feature gate is enabled (enabled by default).
 	// +optional
 	PodFailurePolicy *PodFailurePolicy
 
@@ -537,7 +535,8 @@ type JobStatus struct {
 	// +optional
 	Terminating *int32
 
-	// The number of active pods which have a Ready condition.
+	// The number of active pods which have a Ready condition and are not
+	// terminating (without a deletionTimestamp).
 	// +optional
 	Ready *int32
 

@@ -52,7 +52,7 @@ func WaitForJobPodsSucceeded(ctx context.Context, c clientset.Interface, ns, job
 
 // waitForJobPodsInPhase wait for all pods for the Job named JobName in namespace ns to be in a given phase.
 func waitForJobPodsInPhase(ctx context.Context, c clientset.Interface, ns, jobName string, expectedCount int32, phase v1.PodPhase) error {
-	return wait.PollWithContext(ctx, framework.Poll, JobTimeout, func(ctx context.Context) (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, framework.Poll, JobTimeout, false, func(ctx context.Context) (bool, error) {
 		pods, err := GetJobPods(ctx, c, ns, jobName)
 		if err != nil {
 			return false, err
@@ -69,13 +69,16 @@ func waitForJobPodsInPhase(ctx context.Context, c clientset.Interface, ns, jobNa
 
 // WaitForJobComplete uses c to wait for completions to complete for the Job jobName in namespace ns.
 func WaitForJobComplete(ctx context.Context, c clientset.Interface, ns, jobName string, completions int32) error {
-	return wait.PollWithContext(ctx, framework.Poll, JobTimeout, func(ctx context.Context) (bool, error) {
+	if err := wait.PollUntilContextTimeout(ctx, framework.Poll, JobTimeout, false, func(ctx context.Context) (bool, error) {
 		curr, err := c.BatchV1().Jobs(ns).Get(ctx, jobName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
 		return curr.Status.Succeeded == completions, nil
-	})
+	}); err != nil {
+		return nil
+	}
+	return WaitForJobCondition(ctx, c, ns, jobName, batchv1.JobComplete, "")
 }
 
 // WaitForJobReady waits for particular value of the Job .status.ready field
@@ -112,6 +115,28 @@ func WaitForJobFailed(c clientset.Interface, ns, jobName string) error {
 	})
 }
 
+// waitForJobCondition waits for the specified Job to have the expected condition with the specific reason.
+func WaitForJobCondition(ctx context.Context, c clientset.Interface, ns, jobName string, cType batchv1.JobConditionType, reason string) error {
+	err := wait.PollUntilContextTimeout(ctx, framework.Poll, JobTimeout, false, func(ctx context.Context) (bool, error) {
+		curr, err := c.BatchV1().Jobs(ns).Get(ctx, jobName, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		for _, c := range curr.Status.Conditions {
+			if c.Type == cType && c.Status == v1.ConditionTrue {
+				if reason == c.Reason {
+					return true, nil
+				}
+			}
+		}
+		return false, nil
+	})
+	if err != nil {
+		return fmt.Errorf("waiting for Job %q to have the condition %q with reason: %q: %w", jobName, cType, reason, err)
+	}
+	return nil
+}
+
 func isJobFailed(j *batchv1.Job) bool {
 	for _, c := range j.Status.Conditions {
 		if (c.Type == batchv1.JobFailed) && c.Status == v1.ConditionTrue {
@@ -145,7 +170,7 @@ func isJobFinished(j *batchv1.Job) bool {
 
 // WaitForJobGone uses c to wait for up to timeout for the Job named jobName in namespace ns to be removed.
 func WaitForJobGone(ctx context.Context, c clientset.Interface, ns, jobName string, timeout time.Duration) error {
-	return wait.PollWithContext(ctx, framework.Poll, timeout, func(ctx context.Context) (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, framework.Poll, timeout, false, func(ctx context.Context) (bool, error) {
 		_, err := c.BatchV1().Jobs(ns).Get(ctx, jobName, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
 			return true, nil

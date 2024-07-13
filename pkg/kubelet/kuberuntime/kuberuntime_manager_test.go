@@ -31,7 +31,7 @@ import (
 	cadvisorapi "github.com/google/cadvisor/info/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	oteltrace "go.opentelemetry.io/otel/trace"
+	noopoteltrace "go.opentelemetry.io/otel/trace/noop"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -71,7 +71,7 @@ func customTestRuntimeManager(keyring *credentialprovider.BasicDockerKeyring) (*
 		MemoryCapacity: uint64(memoryCapacityQuantity.Value()),
 	}
 	osInterface := &containertest.FakeOS{}
-	manager, err := newFakeKubeRuntimeManager(fakeRuntimeService, fakeImageService, machineInfo, osInterface, &containertest.FakeRuntimeHelper{}, keyring, oteltrace.NewNoopTracerProvider().Tracer(""))
+	manager, err := newFakeKubeRuntimeManager(fakeRuntimeService, fakeImageService, machineInfo, osInterface, &containertest.FakeRuntimeHelper{}, keyring, noopoteltrace.NewTracerProvider().Tracer(""))
 	return fakeRuntimeService, fakeImageService, manager, err
 }
 
@@ -246,8 +246,8 @@ func verifyPods(a, b []*kubecontainer.Pod) bool {
 	return reflect.DeepEqual(a, b)
 }
 
-func verifyFakeContainerList(fakeRuntime *apitest.FakeRuntimeService, expected sets.String) (sets.String, bool) {
-	actual := sets.NewString()
+func verifyFakeContainerList(fakeRuntime *apitest.FakeRuntimeService, expected sets.Set[string]) (sets.Set[string], bool) {
+	actual := sets.New[string]()
 	for _, c := range fakeRuntime.Containers {
 		actual.Insert(c.Id)
 	}
@@ -600,8 +600,8 @@ func TestKillPod(t *testing.T) {
 
 	err = m.KillPod(ctx, pod, runningPod, nil)
 	assert.NoError(t, err)
-	assert.Equal(t, 3, len(fakeRuntime.Containers))
-	assert.Equal(t, 1, len(fakeRuntime.Sandboxes))
+	assert.Len(t, fakeRuntime.Containers, 3)
+	assert.Len(t, fakeRuntime.Sandboxes, 1)
 	for _, sandbox := range fakeRuntime.Sandboxes {
 		assert.Equal(t, runtimeapi.PodSandboxState_SANDBOX_NOTREADY, sandbox.State)
 	}
@@ -640,9 +640,9 @@ func TestSyncPod(t *testing.T) {
 	backOff := flowcontrol.NewBackOff(time.Second, time.Minute)
 	result := m.SyncPod(context.Background(), pod, &kubecontainer.PodStatus{}, []v1.Secret{}, backOff)
 	assert.NoError(t, result.Error())
-	assert.Equal(t, 2, len(fakeRuntime.Containers))
-	assert.Equal(t, 2, len(fakeImage.Images))
-	assert.Equal(t, 1, len(fakeRuntime.Sandboxes))
+	assert.Len(t, fakeRuntime.Containers, 2)
+	assert.Len(t, fakeImage.Images, 2)
+	assert.Len(t, fakeRuntime.Sandboxes, 1)
 	for _, sandbox := range fakeRuntime.Sandboxes {
 		assert.Equal(t, runtimeapi.PodSandboxState_SANDBOX_READY, sandbox.State)
 	}
@@ -741,7 +741,7 @@ func TestPruneInitContainers(t *testing.T) {
 	assert.NoError(t, err)
 
 	m.pruneInitContainersBeforeStart(ctx, pod, podStatus)
-	expectedContainers := sets.NewString(fakes[0].Id, fakes[2].Id)
+	expectedContainers := sets.New[string](fakes[0].Id, fakes[2].Id)
 	if actual, ok := verifyFakeContainerList(fakeRuntime, expectedContainers); !ok {
 		t.Errorf("expected %v, got %v", expectedContainers, actual)
 	}

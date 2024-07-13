@@ -213,8 +213,6 @@ message JobSpec {
   // checked against the backoffLimit. This field cannot be used in combination
   // with restartPolicy=OnFailure.
   //
-  // This field is beta-level. It can be used when the `JobPodFailurePolicy`
-  // feature gate is enabled (enabled by default).
   // +optional
   optional PodFailurePolicy podFailurePolicy = 11;
 
@@ -467,8 +465,8 @@ message JobStatus {
   // +optional
   optional UncountedTerminatedPods uncountedTerminatedPods = 8;
 
-  // The number of pods which have a Ready condition.
-  // +optional
+  // The number of active pods which have a Ready condition and are not
+  // terminating (without a deletionTimestamp).
   optional int32 ready = 9;
 }
 

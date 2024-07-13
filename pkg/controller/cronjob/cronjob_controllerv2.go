@@ -48,7 +48,7 @@ import (
 	"k8s.io/kubernetes/pkg/controller"
 	"k8s.io/kubernetes/pkg/controller/cronjob/metrics"
 	jobutil "k8s.io/kubernetes/pkg/controller/job/util"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 var (
@@ -389,7 +389,7 @@ func (jm *ControllerV2) updateCronJob(logger klog.Logger, old interface{}, curr 
 	// if the change in schedule results in next requeue having to be sooner than it already was,
 	// it will be handled here by the queue. If the next requeue is further than previous schedule,
 	// the sync loop will essentially be a no-op for the already queued key with old schedule.
-	if oldCJ.Spec.Schedule != newCJ.Spec.Schedule || !pointer.StringEqual(oldCJ.Spec.TimeZone, newCJ.Spec.TimeZone) {
+	if oldCJ.Spec.Schedule != newCJ.Spec.Schedule || !ptr.Equal(oldCJ.Spec.TimeZone, newCJ.Spec.TimeZone) {
 		// schedule changed, change the requeue time, pass nil recorder so that syncCronJob will output any warnings
 		sched, err := cron.ParseStandard(formatSchedule(newCJ, nil))
 		if err != nil {
@@ -444,21 +444,25 @@ func (jm *ControllerV2) syncCronJob(
 			// This could happen if we crashed right after creating the Job and before updating the status,
 			// or if our jobs list is newer than our cj status after a relist, or if someone intentionally created
 			// a job that they wanted us to adopt.
-		} else if found && jobutil.IsJobFinished(j) {
-			_, condition := jobutil.FinishedCondition(j)
-			deleteFromActiveList(cronJob, j.ObjectMeta.UID)
-			jm.recorder.Eventf(cronJob, corev1.EventTypeNormal, "SawCompletedJob", "Saw completed job: %s, condition: %v", j.Name, condition)
-			updateStatus = true
-		} else if jobutil.IsJobSucceeded(j) {
-			// a job does not have to be in active list, as long as it has completed successfully, we will process the timestamp
-			if cronJob.Status.LastSuccessfulTime == nil {
-				cronJob.Status.LastSuccessfulTime = j.Status.CompletionTime
+		} else if jobutil.IsJobFinished(j) {
+			if found {
+				_, condition := jobutil.FinishedCondition(j)
+				deleteFromActiveList(cronJob, j.ObjectMeta.UID)
+				jm.recorder.Eventf(cronJob, corev1.EventTypeNormal, "SawCompletedJob", "Saw completed job: %s, condition: %v", j.Name, condition)
 				updateStatus = true
 			}
-			if j.Status.CompletionTime != nil && j.Status.CompletionTime.After(cronJob.Status.LastSuccessfulTime.Time) {
-				cronJob.Status.LastSuccessfulTime = j.Status.CompletionTime
-				updateStatus = true
+			if jobutil.IsJobSucceeded(j) {
+				// a job does not have to be in active list, as long as it has completed successfully, we will process the timestamp
+				if cronJob.Status.LastSuccessfulTime == nil {
+					cronJob.Status.LastSuccessfulTime = j.Status.CompletionTime
+					updateStatus = true
+				}
+				if j.Status.CompletionTime != nil && j.Status.CompletionTime.After(cronJob.Status.LastSuccessfulTime.Time) {
+					cronJob.Status.LastSuccessfulTime = j.Status.CompletionTime
+					updateStatus = true
+				}
 			}
+
 		}
 	}
 
@@ -494,7 +498,7 @@ func (jm *ControllerV2) syncCronJob(
 
 	logger := klog.FromContext(ctx)
 	if cronJob.Spec.TimeZone != nil {
-		timeZone := pointer.StringDeref(cronJob.Spec.TimeZone, "")
+		timeZone := ptr.Deref(cronJob.Spec.TimeZone, "")
 		if _, err := time.LoadLocation(timeZone); err != nil {
 			logger.V(4).Info("Not starting job because timeZone is invalid", "cronjob", klog.KObj(cronJob), "timeZone", timeZone, "err", err)
 			jm.recorder.Eventf(cronJob, corev1.EventTypeWarning, "UnknownTimeZone", "invalid timeZone: %q: %s", timeZone, err)

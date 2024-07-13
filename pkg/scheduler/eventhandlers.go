@@ -24,7 +24,6 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -43,6 +42,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
 	"k8s.io/kubernetes/pkg/scheduler/internal/queue"
 	"k8s.io/kubernetes/pkg/scheduler/profile"
+	"k8s.io/kubernetes/pkg/scheduler/util/assumecache"
 )
 
 func (sched *Scheduler) onStorageClassAdd(obj interface{}) {
@@ -93,7 +93,7 @@ func (sched *Scheduler) updateNodeInCache(oldObj, newObj interface{}) {
 	logger.V(4).Info("Update event for node", "node", klog.KObj(newNode))
 	nodeInfo := sched.Cache.UpdateNode(logger, oldNode, newNode)
 	// Only requeue unschedulable pods if the node became more schedulable.
-	for _, evt := range nodeSchedulingPropertiesChange(newNode, oldNode) {
+	for _, evt := range queue.NodeSchedulingPropertiesChange(newNode, oldNode) {
 		sched.SchedulingQueue.MoveAllToActiveOrBackoffQueue(logger, evt, oldNode, newNode, preCheckForNode(nodeInfo))
 	}
 }
@@ -204,7 +204,20 @@ func (sched *Scheduler) addPodToCache(obj interface{}) {
 		logger.Error(err, "Scheduler cache AddPod failed", "pod", klog.KObj(pod))
 	}
 
-	sched.SchedulingQueue.AssignedPodAdded(logger, pod)
+	// SchedulingQueue.AssignedPodAdded has a problem:
+	// It internally pre-filters Pods to move to activeQ,
+	// while taking only in-tree plugins into consideration.
+	// Consequently, if custom plugins that subscribes Pod/Add events reject Pods,
+	// those Pods will never be requeued to activeQ by an assigned Pod related events,
+	// and they may be stuck in unschedulableQ.
+	//
+	// Here we use MoveAllToActiveOrBackoffQueue only when QueueingHint is enabled.
+	// (We cannot switch to MoveAllToActiveOrBackoffQueue right away because of throughput concern.)
+	if utilfeature.DefaultFeatureGate.Enabled(features.SchedulerQueueingHints) {
+		sched.SchedulingQueue.MoveAllToActiveOrBackoffQueue(logger, queue.AssignedPodAdd, nil, pod, nil)
+	} else {
+		sched.SchedulingQueue.AssignedPodAdded(logger, pod)
+	}
 }
 
 func (sched *Scheduler) updatePodInCache(oldObj, newObj interface{}) {
@@ -225,7 +238,20 @@ func (sched *Scheduler) updatePodInCache(oldObj, newObj interface{}) {
 		logger.Error(err, "Scheduler cache UpdatePod failed", "pod", klog.KObj(oldPod))
 	}
 
-	sched.SchedulingQueue.AssignedPodUpdated(logger, oldPod, newPod)
+	// SchedulingQueue.AssignedPodUpdated has a problem:
+	// It internally pre-filters Pods to move to activeQ,
+	// while taking only in-tree plugins into consideration.
+	// Consequently, if custom plugins that subscribes Pod/Update events reject Pods,
+	// those Pods will never be requeued to activeQ by an assigned Pod related events,
+	// and they may be stuck in unschedulableQ.
+	//
+	// Here we use MoveAllToActiveOrBackoffQueue only when QueueingHint is enabled.
+	// (We cannot switch to MoveAllToActiveOrBackoffQueue right away because of throughput concern.)
+	if utilfeature.DefaultFeatureGate.Enabled(features.SchedulerQueueingHints) {
+		sched.SchedulingQueue.MoveAllToActiveOrBackoffQueue(logger, queue.AssignedPodUpdate, oldPod, newPod, nil)
+	} else {
+		sched.SchedulingQueue.AssignedPodUpdated(logger, oldPod, newPod)
+	}
 }
 
 func (sched *Scheduler) deletePodFromCache(obj interface{}) {
@@ -288,6 +314,7 @@ func addAllEventHandlers(
 	sched *Scheduler,
 	informerFactory informers.SharedInformerFactory,
 	dynInformerFactory dynamicinformer.DynamicSharedInformerFactory,
+	resourceClaimCache *assumecache.AssumeCache,
 	gvkMap map[framework.GVK]framework.ActionType,
 ) error {
 	var (
@@ -456,11 +483,9 @@ func addAllEventHandlers(
 			}
 		case framework.ResourceClaim:
 			if utilfeature.DefaultFeatureGate.Enabled(features.DynamicResourceAllocation) {
-				if handlerRegistration, err = informerFactory.Resource().V1alpha2().ResourceClaims().Informer().AddEventHandler(
+				handlerRegistration = resourceClaimCache.AddEventHandler(
 					buildEvtResHandler(at, framework.ResourceClaim, "ResourceClaim"),
-				); err != nil {
-					return err
-				}
+				)
 				handlers = append(handlers, handlerRegistration)
 			}
 		case framework.ResourceClass:
@@ -543,62 +568,6 @@ func addAllEventHandlers(
 	}
 	sched.registeredHandlers = handlers
 	return nil
-}
-
-func nodeSchedulingPropertiesChange(newNode *v1.Node, oldNode *v1.Node) []framework.ClusterEvent {
-	var events []framework.ClusterEvent
-
-	if nodeSpecUnschedulableChanged(newNode, oldNode) {
-		events = append(events, queue.NodeSpecUnschedulableChange)
-	}
-	if nodeAllocatableChanged(newNode, oldNode) {
-		events = append(events, queue.NodeAllocatableChange)
-	}
-	if nodeLabelsChanged(newNode, oldNode) {
-		events = append(events, queue.NodeLabelChange)
-	}
-	if nodeTaintsChanged(newNode, oldNode) {
-		events = append(events, queue.NodeTaintChange)
-	}
-	if nodeConditionsChanged(newNode, oldNode) {
-		events = append(events, queue.NodeConditionChange)
-	}
-	if nodeAnnotationsChanged(newNode, oldNode) {
-		events = append(events, queue.NodeAnnotationChange)
-	}
-
-	return events
-}
-
-func nodeAllocatableChanged(newNode *v1.Node, oldNode *v1.Node) bool {
-	return !equality.Semantic.DeepEqual(oldNode.Status.Allocatable, newNode.Status.Allocatable)
-}
-
-func nodeLabelsChanged(newNode *v1.Node, oldNode *v1.Node) bool {
-	return !equality.Semantic.DeepEqual(oldNode.GetLabels(), newNode.GetLabels())
-}
-
-func nodeTaintsChanged(newNode *v1.Node, oldNode *v1.Node) bool {
-	return !equality.Semantic.DeepEqual(newNode.Spec.Taints, oldNode.Spec.Taints)
-}
-
-func nodeConditionsChanged(newNode *v1.Node, oldNode *v1.Node) bool {
-	strip := func(conditions []v1.NodeCondition) map[v1.NodeConditionType]v1.ConditionStatus {
-		conditionStatuses := make(map[v1.NodeConditionType]v1.ConditionStatus, len(conditions))
-		for i := range conditions {
-			conditionStatuses[conditions[i].Type] = conditions[i].Status
-		}
-		return conditionStatuses
-	}
-	return !equality.Semantic.DeepEqual(strip(oldNode.Status.Conditions), strip(newNode.Status.Conditions))
-}
-
-func nodeSpecUnschedulableChanged(newNode *v1.Node, oldNode *v1.Node) bool {
-	return newNode.Spec.Unschedulable != oldNode.Spec.Unschedulable && !newNode.Spec.Unschedulable
-}
-
-func nodeAnnotationsChanged(newNode *v1.Node, oldNode *v1.Node) bool {
-	return !equality.Semantic.DeepEqual(oldNode.GetAnnotations(), newNode.GetAnnotations())
 }
 
 func preCheckForNode(nodeInfo *framework.NodeInfo) queue.PreEnqueueCheck {

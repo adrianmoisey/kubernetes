@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-//go:generate mockgen -source=runtime.go -destination=testing/runtime_mock.go -package=testing Runtime
+//go:generate mockery
 package container
 
 import (
@@ -274,6 +274,9 @@ const (
 	ContainerStateUnknown State = "unknown"
 )
 
+// ContainerReasonStatusUnknown indicates a container the status of the container cannot be determined.
+const ContainerReasonStatusUnknown string = "ContainerStatusUnknown"
+
 // Container provides the runtime information for a container, such as ID, hash,
 // state of the container.
 type Container struct {
@@ -369,6 +372,29 @@ type Status struct {
 	Message string
 	// CPU and memory resources for this container
 	Resources *ContainerResources
+	// User identity information of the first process of this container
+	User *ContainerUser
+}
+
+// ContainerUser represents user identity information
+type ContainerUser struct {
+	// Linux holds user identity information of the first process of the containers in Linux.
+	// Note that this field cannot be set when spec.os.name is windows.
+	Linux *LinuxContainerUser
+
+	// Windows holds user identity information of the first process of the containers in Windows
+	// This is just reserved for future use.
+	// Windows *WindowsContainerUser
+}
+
+// LinuxContainerUser represents user identity information in Linux containers
+type LinuxContainerUser struct {
+	// UID is the primary uid of the first process in the container
+	UID int64
+	// GID is the primary gid of the first process in the container
+	GID int64
+	// SupplementalGroups are the supplemental groups attached to the first process in the container
+	SupplementalGroups []int64
 }
 
 // FindContainerStatusByName returns container status in the pod status with the given name.
