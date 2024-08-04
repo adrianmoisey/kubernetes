@@ -34,7 +34,7 @@ type readFileFunc func(string) ([]byte, error)
 
 func fetchTCPMax(readFile readFileFunc) (*int64, error) {
 	// https://www.kernel.org/doc/Documentation/networking/ip-sysctl.txt
-	tcpMemFile := "/proc/sys/net/ipv4/tcp_mem"
+	tcpMemFile := "/proc/sys/net/ipv4/tcp_rmem"
 	fileContent, err := readFile(tcpMemFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %s", err.Error())
