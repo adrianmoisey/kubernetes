@@ -42,6 +42,7 @@ func fetchTCPMax(readFile readFileFunc) (*int64, error) {
 
 	splitTcpMem := strings.Split(string(fileContent), "\t")
 	tcpMemMax := splitTcpMem[len(splitTcpMem)-1]
+	tcpMemMax = strings.TrimRight(tcpMemMax, "\n")
 
 	limit, err := strconv.ParseInt(tcpMemMax, 10, 64)
 	if err != nil {
