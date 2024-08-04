@@ -87,14 +87,17 @@ func mustSetupCluster(tCtx ktesting.TContext, config *config.KubeSchedulerConfig
 	// except for DRA API group when needed.
 	runtimeConfig := []string{"api/alpha=false"}
 	if enabledFeatures[features.DynamicResourceAllocation] {
-		runtimeConfig = append(runtimeConfig, "resource.k8s.io/v1alpha2=true")
+		runtimeConfig = append(runtimeConfig, "resource.k8s.io/v1alpha3=true")
 	}
 	customFlags := []string{
 		// Disable ServiceAccount admission plugin as we don't have serviceaccount controller running.
 		"--disable-admission-plugins=ServiceAccount,TaintNodesByCondition,Priority",
 		"--runtime-config=" + strings.Join(runtimeConfig, ","),
 	}
-	server, err := apiservertesting.StartTestServer(tCtx, apiservertesting.NewDefaultTestServerOptions(), customFlags, framework.SharedEtcd())
+	serverOpts := apiservertesting.NewDefaultTestServerOptions()
+	// Timeout sufficiently long to handle deleting pods of the largest test cases.
+	serverOpts.RequestTimeout = 10 * time.Minute
+	server, err := apiservertesting.StartTestServer(tCtx, serverOpts, customFlags, framework.SharedEtcd())
 	if err != nil {
 		tCtx.Fatalf("start apiserver: %v", err)
 	}

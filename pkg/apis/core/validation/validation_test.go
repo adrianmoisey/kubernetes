@@ -3007,6 +3007,20 @@ func TestValidatePersistentVolumeClaimUpdate(t *testing.T) {
 			enableVolumeAttributesClass: true,
 			isExpectedFailure:           true,
 		},
+		"invalid-update-volume-attributes-class-when-claim-not-bound": {
+			oldClaim: func() *core.PersistentVolumeClaim {
+				clone := validClaimVolumeAttributesClass1.DeepCopy()
+				clone.Status.Phase = core.ClaimPending
+				return clone
+			}(),
+			newClaim: func() *core.PersistentVolumeClaim {
+				clone := validClaimVolumeAttributesClass2.DeepCopy()
+				clone.Status.Phase = core.ClaimPending
+				return clone
+			}(),
+			enableVolumeAttributesClass: true,
+			isExpectedFailure:           true,
+		},
 		"invalid-update-volume-attributes-class-to-nil-without-featuregate-enabled": {
 			oldClaim:                    validClaimVolumeAttributesClass1,
 			newClaim:                    validClaimNilVolumeAttributesClass,
@@ -5352,6 +5366,97 @@ func TestValidateVolumes(t *testing.T) {
 				field: "projected.sources[1]",
 			}},
 		},
+		// ImageVolumeSource
+		{
+			name: "valid image volume on pod",
+			vol: core.Volume{
+				Name: "image-volume",
+				VolumeSource: core.VolumeSource{
+					Image: &core.ImageVolumeSource{
+						Reference:  "quay.io/my/artifact:v1",
+						PullPolicy: "IfNotPresent",
+					},
+				},
+			},
+			opts: PodValidationOptions{AllowImageVolumeSource: true},
+		}, {
+			name: "feature disabled",
+			vol: core.Volume{
+				Name: "image-volume",
+				VolumeSource: core.VolumeSource{
+					Image: &core.ImageVolumeSource{
+						Reference:  "quay.io/my/artifact:v1",
+						PullPolicy: "IfNotPresent",
+					},
+				},
+			},
+			opts: PodValidationOptions{AllowImageVolumeSource: false},
+			errs: []verr{{
+				etype:  field.ErrorTypeRequired,
+				field:  "field[0]",
+				detail: "must specify a volume type",
+			}},
+		}, {
+			name: "image volume with empty name",
+			vol: core.Volume{
+				Name: "",
+				VolumeSource: core.VolumeSource{
+					Image: &core.ImageVolumeSource{
+						Reference:  "quay.io/my/artifact:v1",
+						PullPolicy: "IfNotPresent",
+					},
+				},
+			},
+			opts: PodValidationOptions{AllowImageVolumeSource: true},
+			errs: []verr{{
+				etype: field.ErrorTypeRequired,
+				field: "name",
+			}},
+		}, {
+			name: "image volume with empty reference on pod",
+			vol: core.Volume{
+				Name: "image-volume",
+				VolumeSource: core.VolumeSource{
+					Image: &core.ImageVolumeSource{
+						Reference:  "",
+						PullPolicy: "IfNotPresent",
+					},
+				},
+			},
+			opts: PodValidationOptions{AllowImageVolumeSource: true, ResourceIsPod: true},
+			errs: []verr{{
+				etype: field.ErrorTypeRequired,
+				field: "image.reference",
+			}},
+		}, {
+			name: "image volume with empty reference on other object",
+			vol: core.Volume{
+				Name: "image-volume",
+				VolumeSource: core.VolumeSource{
+					Image: &core.ImageVolumeSource{
+						Reference:  "",
+						PullPolicy: "IfNotPresent",
+					},
+				},
+			},
+			opts: PodValidationOptions{AllowImageVolumeSource: true, ResourceIsPod: false},
+		}, {
+			name: "image volume with wrong pullPolicy",
+			vol: core.Volume{
+				Name: "image-volume",
+				VolumeSource: core.VolumeSource{
+					Image: &core.ImageVolumeSource{
+						Reference:  "quay.io/my/artifact:v1",
+						PullPolicy: "wrong",
+					},
+				},
+			},
+			opts: PodValidationOptions{AllowImageVolumeSource: true},
+			errs: []verr{{
+				etype: field.ErrorTypeNotSupported,
+				field: "image.pullPolicy",
+			}},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -5368,7 +5473,7 @@ func TestValidateVolumes(t *testing.T) {
 				if err.Type != expErr.etype {
 					t.Errorf("unexpected error type:\n\twant: %q\n\t got: %q", expErr.etype, err.Type)
 				}
-				if !strings.HasSuffix(err.Field, "."+expErr.field) {
+				if err.Field != expErr.field && !strings.HasSuffix(err.Field, "."+expErr.field) {
 					t.Errorf("unexpected error field:\n\twant: %q\n\t got: %q", expErr.field, err.Field)
 				}
 				if !strings.Contains(err.Detail, expErr.detail) {
@@ -6959,8 +7064,10 @@ func TestValidateVolumeMounts(t *testing.T) {
 				},
 			},
 		}}}},
+		{Name: "image-volume", VolumeSource: core.VolumeSource{Image: &core.ImageVolumeSource{Reference: "quay.io/my/artifact:v1", PullPolicy: "IfNotPresent"}}},
 	}
-	vols, v1err := ValidateVolumes(volumes, nil, field.NewPath("field"), PodValidationOptions{})
+	opts := PodValidationOptions{AllowImageVolumeSource: true}
+	vols, v1err := ValidateVolumes(volumes, nil, field.NewPath("field"), opts)
 	if len(v1err) > 0 {
 		t.Errorf("Invalid test volume - expected success %v", v1err)
 		return
@@ -6988,38 +7095,41 @@ func TestValidateVolumeMounts(t *testing.T) {
 		{Name: "123", MountPath: "/rro-ifpossible", ReadOnly: true, RecursiveReadOnly: ptr.To(core.RecursiveReadOnlyIfPossible)},
 		{Name: "123", MountPath: "/rro-enabled", ReadOnly: true, RecursiveReadOnly: ptr.To(core.RecursiveReadOnlyEnabled)},
 		{Name: "123", MountPath: "/rro-enabled-2", ReadOnly: true, RecursiveReadOnly: ptr.To(core.RecursiveReadOnlyEnabled), MountPropagation: ptr.To(core.MountPropagationNone)},
+		{Name: "image-volume", MountPath: "/image-volume"},
 	}
 	goodVolumeDevices := []core.VolumeDevice{
 		{Name: "xyz", DevicePath: "/foofoo"},
 		{Name: "uvw", DevicePath: "/foofoo/share/test"},
 	}
-	if errs := ValidateVolumeMounts(successCase, GetVolumeDeviceMap(goodVolumeDevices), vols, &container, field.NewPath("field")); len(errs) != 0 {
+	if errs := ValidateVolumeMounts(successCase, GetVolumeDeviceMap(goodVolumeDevices), vols, &container, field.NewPath("field"), opts); len(errs) != 0 {
 		t.Errorf("expected success: %v", errs)
 	}
 
 	errorCases := map[string][]core.VolumeMount{
-		"empty name":                             {{Name: "", MountPath: "/foo"}},
-		"name not found":                         {{Name: "", MountPath: "/foo"}},
-		"empty mountpath":                        {{Name: "abc", MountPath: ""}},
-		"mountpath collision":                    {{Name: "foo", MountPath: "/path/a"}, {Name: "bar", MountPath: "/path/a"}},
-		"absolute subpath":                       {{Name: "abc", MountPath: "/bar", SubPath: "/baz"}},
-		"subpath in ..":                          {{Name: "abc", MountPath: "/bar", SubPath: "../baz"}},
-		"subpath contains ..":                    {{Name: "abc", MountPath: "/bar", SubPath: "baz/../bat"}},
-		"subpath ends in ..":                     {{Name: "abc", MountPath: "/bar", SubPath: "./.."}},
-		"disabled MountPropagation feature gate": {{Name: "abc", MountPath: "/bar", MountPropagation: &propagation}},
-		"name exists in volumeDevice":            {{Name: "xyz", MountPath: "/bar"}},
-		"mountpath exists in volumeDevice":       {{Name: "uvw", MountPath: "/mnt/exists"}},
-		"both exist in volumeDevice":             {{Name: "xyz", MountPath: "/mnt/exists"}},
-		"rro but not ro":                         {{Name: "123", MountPath: "/rro-bad1", ReadOnly: false, RecursiveReadOnly: ptr.To(core.RecursiveReadOnlyEnabled)}},
-		"rro with incompatible propagation":      {{Name: "123", MountPath: "/rro-bad2", ReadOnly: true, RecursiveReadOnly: ptr.To(core.RecursiveReadOnlyEnabled), MountPropagation: ptr.To(core.MountPropagationHostToContainer)}},
-		"rro-if-possible but not ro":             {{Name: "123", MountPath: "/rro-bad1", ReadOnly: false, RecursiveReadOnly: ptr.To(core.RecursiveReadOnlyIfPossible)}},
+		"empty name":                                       {{Name: "", MountPath: "/foo"}},
+		"name not found":                                   {{Name: "", MountPath: "/foo"}},
+		"empty mountpath":                                  {{Name: "abc", MountPath: ""}},
+		"mountpath collision":                              {{Name: "foo", MountPath: "/path/a"}, {Name: "bar", MountPath: "/path/a"}},
+		"absolute subpath":                                 {{Name: "abc", MountPath: "/bar", SubPath: "/baz"}},
+		"subpath in ..":                                    {{Name: "abc", MountPath: "/bar", SubPath: "../baz"}},
+		"subpath contains ..":                              {{Name: "abc", MountPath: "/bar", SubPath: "baz/../bat"}},
+		"subpath ends in ..":                               {{Name: "abc", MountPath: "/bar", SubPath: "./.."}},
+		"disabled MountPropagation feature gate":           {{Name: "abc", MountPath: "/bar", MountPropagation: &propagation}},
+		"name exists in volumeDevice":                      {{Name: "xyz", MountPath: "/bar"}},
+		"mountpath exists in volumeDevice":                 {{Name: "uvw", MountPath: "/mnt/exists"}},
+		"both exist in volumeDevice":                       {{Name: "xyz", MountPath: "/mnt/exists"}},
+		"rro but not ro":                                   {{Name: "123", MountPath: "/rro-bad1", ReadOnly: false, RecursiveReadOnly: ptr.To(core.RecursiveReadOnlyEnabled)}},
+		"rro with incompatible propagation":                {{Name: "123", MountPath: "/rro-bad2", ReadOnly: true, RecursiveReadOnly: ptr.To(core.RecursiveReadOnlyEnabled), MountPropagation: ptr.To(core.MountPropagationHostToContainer)}},
+		"rro-if-possible but not ro":                       {{Name: "123", MountPath: "/rro-bad1", ReadOnly: false, RecursiveReadOnly: ptr.To(core.RecursiveReadOnlyIfPossible)}},
+		"subPath not allowed for image volume sources":     {{Name: "image-volume", MountPath: "/image-volume-err-1", SubPath: "/foo"}},
+		"subPathExpr not allowed for image volume sources": {{Name: "image-volume", MountPath: "/image-volume-err-2", SubPathExpr: "$(POD_NAME)"}},
 	}
 	badVolumeDevice := []core.VolumeDevice{
 		{Name: "xyz", DevicePath: "/mnt/exists"},
 	}
 
 	for k, v := range errorCases {
-		if errs := ValidateVolumeMounts(v, GetVolumeDeviceMap(badVolumeDevice), vols, &container, field.NewPath("field")); len(errs) == 0 {
+		if errs := ValidateVolumeMounts(v, GetVolumeDeviceMap(badVolumeDevice), vols, &container, field.NewPath("field"), opts); len(errs) == 0 {
 			t.Errorf("expected failure for %s", k)
 		}
 	}
@@ -7085,7 +7195,7 @@ func TestValidateSubpathMutuallyExclusive(t *testing.T) {
 	}
 
 	for name, test := range cases {
-		errs := ValidateVolumeMounts(test.mounts, GetVolumeDeviceMap(goodVolumeDevices), vols, &container, field.NewPath("field"))
+		errs := ValidateVolumeMounts(test.mounts, GetVolumeDeviceMap(goodVolumeDevices), vols, &container, field.NewPath("field"), PodValidationOptions{})
 
 		if len(errs) != 0 && !test.expectError {
 			t.Errorf("test %v failed: %+v", name, errs)
@@ -7141,7 +7251,7 @@ func TestValidateDisabledSubpathExpr(t *testing.T) {
 	}
 
 	for name, test := range cases {
-		errs := ValidateVolumeMounts(test.mounts, GetVolumeDeviceMap(goodVolumeDevices), vols, &container, field.NewPath("field"))
+		errs := ValidateVolumeMounts(test.mounts, GetVolumeDeviceMap(goodVolumeDevices), vols, &container, field.NewPath("field"), PodValidationOptions{})
 
 		if len(errs) != 0 && !test.expectError {
 			t.Errorf("test %v failed: %+v", name, errs)
@@ -7249,7 +7359,7 @@ func TestValidateMountPropagation(t *testing.T) {
 		return
 	}
 	for i, test := range tests {
-		errs := ValidateVolumeMounts([]core.VolumeMount{test.mount}, nil, vols2, test.container, field.NewPath("field"))
+		errs := ValidateVolumeMounts([]core.VolumeMount{test.mount}, nil, vols2, test.container, field.NewPath("field"), PodValidationOptions{})
 		if test.expectError && len(errs) == 0 {
 			t.Errorf("test %d expected error, got none", i)
 		}
@@ -18971,7 +19081,7 @@ func TestValidatePersistentVolumeClaimStatusUpdate(t *testing.T) {
 		},
 	}, core.PersistentVolumeClaimStatus{
 		AllocatedResourceStatuses: map[core.ResourceName]core.ClaimResourceStatus{
-			core.ResourceStorage: core.PersistentVolumeClaimControllerResizeFailed,
+			core.ResourceStorage: core.PersistentVolumeClaimControllerResizeInfeasible,
 		},
 	})
 
@@ -19001,7 +19111,7 @@ func TestValidatePersistentVolumeClaimStatusUpdate(t *testing.T) {
 		},
 	}, core.PersistentVolumeClaimStatus{
 		AllocatedResourceStatuses: map[core.ResourceName]core.ClaimResourceStatus{
-			core.ResourceStorage: core.PersistentVolumeClaimNodeResizeFailed,
+			core.ResourceStorage: core.PersistentVolumeClaimNodeResizeInfeasible,
 		},
 	})
 
@@ -19045,7 +19155,7 @@ func TestValidatePersistentVolumeClaimStatusUpdate(t *testing.T) {
 			validResizeKeyCustom: resource.MustParse("10Gi"),
 		},
 		AllocatedResourceStatuses: map[core.ResourceName]core.ClaimResourceStatus{
-			core.ResourceStorage: core.PersistentVolumeClaimControllerResizeFailed,
+			core.ResourceStorage: core.PersistentVolumeClaimControllerResizeInfeasible,
 			validResizeKeyCustom: core.PersistentVolumeClaimControllerResizeInProgress,
 		},
 	})
@@ -19234,6 +19344,10 @@ func TestValidateResourceQuota(t *testing.T) {
 			core.ResourceQuotas:                 resource.MustParse("10"),
 			core.ResourceConfigMaps:             resource.MustParse("10"),
 			core.ResourceSecrets:                resource.MustParse("10"),
+
+			// These are unknown and not enforced unless DRA is enabled, but not invalid.
+			"count/resourceclaims.resource.k8s.io":     resource.MustParse("1"),
+			"gold.deviceclass.resource.k8s.io/devices": resource.MustParse("1"),
 		},
 	}
 
@@ -19469,7 +19583,7 @@ func TestValidateResourceQuota(t *testing.T) {
 		},
 		"invalid-cross-namespace-affinity": {
 			rq:        core.ResourceQuota{ObjectMeta: metav1.ObjectMeta{Name: "abc", Namespace: "foo"}, Spec: invalidCrossNamespaceAffinitySpec},
-			errDetail: "must be 'Exist' when scope is any of ResourceQuotaScopeTerminating, ResourceQuotaScopeNotTerminating, ResourceQuotaScopeBestEffort, ResourceQuotaScopeNotBestEffort or ResourceQuotaScopeCrossNamespacePodAffinity",
+			errDetail: "must be 'Exists' when scope is any of ResourceQuotaScopeTerminating, ResourceQuotaScopeNotTerminating, ResourceQuotaScopeBestEffort, ResourceQuotaScopeNotBestEffort or ResourceQuotaScopeCrossNamespacePodAffinity",
 		},
 	}
 	for name, tc := range testCases {
@@ -23720,6 +23834,8 @@ func TestValidateDynamicResourceAllocation(t *testing.T) {
 	shortPodName := &metav1.ObjectMeta{
 		Name: "some-pod",
 	}
+	requestName := "req-0"
+	anotherRequestName := "req-1"
 	goodClaimTemplate := podtest.MakePod("",
 		podtest.SetContainers(podtest.MakeContainer("ctr", podtest.SetContainerResources(core.ResourceRequirements{Claims: []core.ResourceClaim{{Name: "my-claim-template"}}}))),
 		podtest.SetRestartPolicy(core.RestartPolicyAlways),
@@ -23749,6 +23865,26 @@ func TestValidateDynamicResourceAllocation(t *testing.T) {
 				},
 				core.PodResourceClaim{
 					Name:              "another-claim",
+					ResourceClaimName: &externalClaimName,
+				}),
+		),
+		"multiple claims with requests": podtest.MakePod("",
+			podtest.SetContainers(podtest.MakeContainer("ctr", podtest.SetContainerResources(core.ResourceRequirements{Claims: []core.ResourceClaim{{Name: "my-claim", Request: requestName}, {Name: "another-claim", Request: requestName}}}))),
+			podtest.SetResourceClaims(
+				core.PodResourceClaim{
+					Name:              "my-claim",
+					ResourceClaimName: &externalClaimName,
+				},
+				core.PodResourceClaim{
+					Name:              "another-claim",
+					ResourceClaimName: &externalClaimName,
+				}),
+		),
+		"single claim with requests": podtest.MakePod("",
+			podtest.SetContainers(podtest.MakeContainer("ctr", podtest.SetContainerResources(core.ResourceRequirements{Claims: []core.ResourceClaim{{Name: "my-claim", Request: requestName}, {Name: "my-claim", Request: anotherRequestName}}}))),
+			podtest.SetResourceClaims(
+				core.PodResourceClaim{
+					Name:              "my-claim",
 					ResourceClaimName: &externalClaimName,
 				}),
 		),
@@ -23827,6 +23963,34 @@ func TestValidateDynamicResourceAllocation(t *testing.T) {
 		),
 		"pod claim name duplicates": podtest.MakePod("",
 			podtest.SetContainers(podtest.MakeContainer("ctr", podtest.SetContainerResources(core.ResourceRequirements{Claims: []core.ResourceClaim{{Name: "my-claim"}, {Name: "my-claim"}}}))),
+			podtest.SetResourceClaims(core.PodResourceClaim{
+				Name:              "my-claim",
+				ResourceClaimName: &externalClaimName,
+			}),
+		),
+		"pod claim name duplicates without and with request": podtest.MakePod("",
+			podtest.SetContainers(podtest.MakeContainer("ctr", podtest.SetContainerResources(core.ResourceRequirements{Claims: []core.ResourceClaim{{Name: "my-claim"}, {Name: "my-claim", Request: "req-0"}}}))),
+			podtest.SetResourceClaims(core.PodResourceClaim{
+				Name:              "my-claim",
+				ResourceClaimName: &externalClaimName,
+			}),
+		),
+		"pod claim name duplicates with and without request": podtest.MakePod("",
+			podtest.SetContainers(podtest.MakeContainer("ctr", podtest.SetContainerResources(core.ResourceRequirements{Claims: []core.ResourceClaim{{Name: "my-claim", Request: "req-0"}, {Name: "my-claim"}}}))),
+			podtest.SetResourceClaims(core.PodResourceClaim{
+				Name:              "my-claim",
+				ResourceClaimName: &externalClaimName,
+			}),
+		),
+		"pod claim name duplicates with requests": podtest.MakePod("",
+			podtest.SetContainers(podtest.MakeContainer("ctr", podtest.SetContainerResources(core.ResourceRequirements{Claims: []core.ResourceClaim{{Name: "my-claim", Request: "req-0"}, {Name: "my-claim", Request: "req-0"}}}))),
+			podtest.SetResourceClaims(core.PodResourceClaim{
+				Name:              "my-claim",
+				ResourceClaimName: &externalClaimName,
+			}),
+		),
+		"bad request name": podtest.MakePod("",
+			podtest.SetContainers(podtest.MakeContainer("ctr", podtest.SetContainerResources(core.ResourceRequirements{Claims: []core.ResourceClaim{{Name: "my-claim", Request: "*$@%^"}}}))),
 			podtest.SetResourceClaims(core.PodResourceClaim{
 				Name:              "my-claim",
 				ResourceClaimName: &externalClaimName,
@@ -24257,5 +24421,243 @@ func TestValidatePodStatusUpdateWithSupplementalGroupsPolicy(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+func TestValidateContainerStatusNoAllocatedResourcesStatus(t *testing.T) {
+	containerStatuses := []core.ContainerStatus{
+		{
+			Name: "container-1",
+		},
+		{
+			Name: "container-2",
+			AllocatedResourcesStatus: []core.ResourceStatus{
+				{
+					Name:      "test.device/test",
+					Resources: nil,
+				},
+			},
+		},
+		{
+			Name: "container-3",
+			AllocatedResourcesStatus: []core.ResourceStatus{
+				{
+					Name: "test.device/test",
+					Resources: []core.ResourceHealth{
+						{
+							ResourceID: "resource-1",
+							Health:     core.ResourceHealthStatusHealthy,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	fldPath := field.NewPath("spec", "containers")
+
+	errs := validateContainerStatusNoAllocatedResourcesStatus(containerStatuses, fldPath)
+
+	assert.Len(t, errs, 2)
+	assert.Equal(t, "spec.containers[1].allocatedResourcesStatus", errs[0].Field)
+	assert.Equal(t, "must not be specified in container status", errs[0].Detail)
+	assert.Equal(t, "spec.containers[2].allocatedResourcesStatus", errs[1].Field)
+	assert.Equal(t, "must not be specified in container status", errs[1].Detail)
+}
+
+func TestValidateContainerStatusAllocatedResourcesStatus(t *testing.T) {
+	fldPath := field.NewPath("spec", "containers")
+
+	testCases := map[string]struct {
+		containers        []core.Container
+		containerStatuses []core.ContainerStatus
+		wantFieldErrors   field.ErrorList
+	}{
+		"basic correct status": {
+			containers: []core.Container{
+				{
+					Name: "container-1",
+					Resources: core.ResourceRequirements{
+						Requests: core.ResourceList{
+							"test.device/test": resource.MustParse("1"),
+						},
+					},
+				},
+			},
+			containerStatuses: []core.ContainerStatus{
+				{
+					Name: "container-1",
+					AllocatedResourcesStatus: []core.ResourceStatus{
+						{
+							Name: "test.device/test",
+							Resources: []core.ResourceHealth{
+								{
+									ResourceID: "resource-1",
+									Health:     core.ResourceHealthStatusHealthy,
+								},
+							},
+						},
+					},
+				},
+			},
+			wantFieldErrors: field.ErrorList{},
+		},
+		"ignoring the missing container (see https://github.com/kubernetes/kubernetes/issues/124915)": {
+			containers: []core.Container{
+				{
+					Name: "container-2",
+					Resources: core.ResourceRequirements{
+						Requests: core.ResourceList{
+							"test.device/test": resource.MustParse("1"),
+						},
+					},
+				},
+			},
+			containerStatuses: []core.ContainerStatus{
+				{
+					Name: "container-1",
+					AllocatedResourcesStatus: []core.ResourceStatus{
+						{
+							Name: "test.device/test",
+							Resources: []core.ResourceHealth{
+								{
+									ResourceID: "resource-1",
+									Health:     core.ResourceHealthStatusHealthy,
+								},
+							},
+						},
+					},
+				},
+			},
+			wantFieldErrors: field.ErrorList{},
+		},
+		"allow nil": {
+			containers: []core.Container{
+				{
+					Name: "container-2",
+					Resources: core.ResourceRequirements{
+						Requests: core.ResourceList{
+							"test.device/test": resource.MustParse("1"),
+						},
+					},
+				},
+			},
+			containerStatuses: []core.ContainerStatus{
+				{
+					Name: "container-1",
+				},
+			},
+			wantFieldErrors: field.ErrorList{},
+		},
+		"don't allow non-unique IDs": {
+			containers: []core.Container{
+				{
+					Name: "container-2",
+					Resources: core.ResourceRequirements{
+						Requests: core.ResourceList{
+							"test.device/test": resource.MustParse("1"),
+						},
+					},
+				},
+			},
+			containerStatuses: []core.ContainerStatus{
+				{
+					Name: "container-1",
+					AllocatedResourcesStatus: []core.ResourceStatus{
+						{
+							Name: "test.device/test",
+							Resources: []core.ResourceHealth{
+								{
+									ResourceID: "resource-1",
+									Health:     core.ResourceHealthStatusHealthy,
+								},
+								{
+									ResourceID: "resource-1",
+									Health:     core.ResourceHealthStatusUnhealthy,
+								},
+							},
+						},
+					},
+				},
+			},
+			wantFieldErrors: field.ErrorList{
+				field.Duplicate(fldPath.Index(0).Child("allocatedResourcesStatus").Index(0).Child("resources").Index(1).Child("resourceID"), core.ResourceID("resource-1")),
+			},
+		},
+
+		"don't allow resources that are not in spec": {
+			containers: []core.Container{
+				{
+					Name: "container-1",
+					Resources: core.ResourceRequirements{
+						Requests: core.ResourceList{
+							"test.device/test": resource.MustParse("1"),
+						},
+					},
+				},
+			},
+			containerStatuses: []core.ContainerStatus{
+				{
+					Name: "container-1",
+					AllocatedResourcesStatus: []core.ResourceStatus{
+						{
+							Name: "test.device/test",
+							Resources: []core.ResourceHealth{
+								{
+									ResourceID: "resource-1",
+									Health:     core.ResourceHealthStatusHealthy,
+								},
+							},
+						},
+						{
+							Name:      "test.device/test2",
+							Resources: []core.ResourceHealth{},
+						},
+					},
+				},
+			},
+			wantFieldErrors: field.ErrorList{
+				field.Invalid(fldPath.Index(0).Child("allocatedResourcesStatus").Index(1).Child("name"), core.ResourceName("test.device/test2"), "must match one of the container's resource requirements"),
+			},
+		},
+
+		"don't allow health status outside the known values": {
+			containers: []core.Container{
+				{
+					Name: "container-1",
+					Resources: core.ResourceRequirements{
+						Requests: core.ResourceList{
+							"test.device/test": resource.MustParse("1"),
+						},
+					},
+				},
+			},
+			containerStatuses: []core.ContainerStatus{
+				{
+					Name: "container-1",
+					AllocatedResourcesStatus: []core.ResourceStatus{
+						{
+							Name: "test.device/test",
+							Resources: []core.ResourceHealth{
+								{
+									ResourceID: "resource-1",
+									Health:     "invalid-health-value",
+								},
+							},
+						},
+					},
+				},
+			},
+			wantFieldErrors: field.ErrorList{
+				field.NotSupported(fldPath.Index(0).Child("allocatedResourcesStatus").Index(0).Child("resources").Index(0).Child("health"), core.ResourceHealthStatus("invalid-health-value"), []string{"Healthy", "Unhealthy", "Unknown"}),
+			},
+		},
+	}
+	for name, tt := range testCases {
+		t.Run(name, func(t *testing.T) {
+			errs := validateContainerStatusAllocatedResourcesStatus(tt.containerStatuses, fldPath, tt.containers)
+			if diff := cmp.Diff(tt.wantFieldErrors, errs); diff != "" {
+				t.Errorf("unexpected field errors (-want, +got):\n%s", diff)
+			}
+		})
 	}
 }

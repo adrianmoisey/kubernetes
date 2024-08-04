@@ -38,6 +38,7 @@ import (
 	certificatesapiv1 "k8s.io/api/certificates/v1"
 	certificatesv1alpha1 "k8s.io/api/certificates/v1alpha1"
 	coordinationapiv1 "k8s.io/api/coordination/v1"
+	coordinationv1alpha1 "k8s.io/api/coordination/v1alpha1"
 	apiv1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	eventsv1 "k8s.io/api/events/v1"
@@ -47,7 +48,7 @@ import (
 	nodev1 "k8s.io/api/node/v1"
 	policyapiv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	resourcev1alpha2 "k8s.io/api/resource/v1alpha2"
+	resourceapi "k8s.io/api/resource/v1alpha3"
 	schedulingapiv1 "k8s.io/api/scheduling/v1"
 	storageapiv1 "k8s.io/api/storage/v1"
 	storageapiv1alpha1 "k8s.io/api/storage/v1alpha1"
@@ -349,7 +350,7 @@ func (c CompletedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 		KubernetesServiceNodePort: c.Extra.KubernetesServiceNodePort,
 	}, client, c.ControlPlane.Extra.VersionedInformers.Core().V1().Services())
 	s.ControlPlane.GenericAPIServer.AddPostStartHookOrDie("bootstrap-controller", func(hookContext genericapiserver.PostStartHookContext) error {
-		kubernetesServiceCtrl.Start(hookContext.StopCh)
+		kubernetesServiceCtrl.Start(hookContext.Done())
 		return nil
 	})
 	s.ControlPlane.GenericAPIServer.AddPreShutdownHookOrDie("stop-kubernetes-service-controller", func() error {
@@ -475,7 +476,9 @@ var (
 		admissionregistrationv1alpha1.SchemeGroupVersion,
 		apiserverinternalv1alpha1.SchemeGroupVersion,
 		authenticationv1alpha1.SchemeGroupVersion,
-		resourcev1alpha2.SchemeGroupVersion,
+		apiserverinternalv1alpha1.SchemeGroupVersion,
+		coordinationv1alpha1.SchemeGroupVersion,
+		resourceapi.SchemeGroupVersion,
 		certificatesv1alpha1.SchemeGroupVersion,
 		networkingapiv1alpha1.SchemeGroupVersion,
 		storageapiv1alpha1.SchemeGroupVersion,
