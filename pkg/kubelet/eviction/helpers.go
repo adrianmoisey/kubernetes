@@ -58,6 +58,8 @@ const (
 	resourceInodes v1.ResourceName = "inodes"
 	// resourcePids, number. internal to this module, used to account for local pid consumption.
 	resourcePids v1.ResourceName = "pids"
+	// FIXME resourcePids, number. internal to this module, used to account for local pid consumption.
+	resourceTcpMems v1.ResourceName = "tcpmem"
 	// OffendingContainersKey is the key in eviction event annotations for the list of container names which exceeded their requests
 	OffendingContainersKey = "offending_containers"
 	// OffendingContainersUsageKey is the key in eviction event annotations for the list of usage of containers which exceeded their requests
@@ -87,6 +89,7 @@ func init() {
 	signalToNodeCondition[evictionapi.SignalNodeFsInodesFree] = v1.NodeDiskPressure
 	signalToNodeCondition[evictionapi.SignalContainerFsInodesFree] = v1.NodeDiskPressure
 	signalToNodeCondition[evictionapi.SignalPIDAvailable] = v1.NodePIDPressure
+	signalToNodeCondition[evictionapi.SignalTCPMemAvailable] = v1.NodeTCPMemPressure
 
 	// map signals to resources (and vice-versa)
 	signalToResource = map[evictionapi.Signal]v1.ResourceName{}
@@ -99,6 +102,8 @@ func init() {
 	signalToResource[evictionapi.SignalNodeFsAvailable] = v1.ResourceEphemeralStorage
 	signalToResource[evictionapi.SignalNodeFsInodesFree] = resourceInodes
 	signalToResource[evictionapi.SignalPIDAvailable] = resourcePids
+	signalToResource[evictionapi.SignalTCPMemAvailable] = resourceTcpMems
+
 }
 
 // validSignal returns true if the signal is supported.
