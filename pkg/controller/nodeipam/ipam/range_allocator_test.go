@@ -841,3 +841,105 @@ func TestReleaseCIDRSuccess(t *testing.T) {
 		testFunc(tc)
 	}
 }
+func TestNodeDeletionReleaseCIDR(t *testing.T) {
+	testCases := []struct {
+		description       string
+		nodeKey           string
+		existingNodes     []*v1.Node
+		shouldReleaseCIDR bool
+	}{
+		{
+			description: "Regular node not under deletion",
+			nodeKey:     "node0",
+			existingNodes: []*v1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node0",
+					},
+					Spec: v1.NodeSpec{
+						PodCIDRs: []string{"10.10.0.1/24"},
+					},
+				},
+			},
+			shouldReleaseCIDR: false,
+		},
+		{
+			description: "Node under deletion",
+			nodeKey:     "node0",
+			existingNodes: []*v1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "node0",
+						DeletionTimestamp: &metav1.Time{Time: time.Now()},
+					},
+					Spec: v1.NodeSpec{
+						PodCIDRs: []string{"10.10.0.1/24"},
+					},
+				},
+			},
+			shouldReleaseCIDR: false,
+		},
+		{
+			description:       "Node deleted",
+			nodeKey:           "node0",
+			existingNodes:     []*v1.Node{},
+			shouldReleaseCIDR: true,
+		},
+	}
+
+	clusterCIDR := "10.10.0.0/16"
+
+	for _, tc := range testCases {
+		t.Run(tc.description, func(t *testing.T) {
+			allocatorParams := CIDRAllocatorParams{
+				ClusterCIDRs: func() []*net.IPNet {
+					_, clusterCIDRv4, _ := netutils.ParseCIDRSloppy(clusterCIDR)
+					return []*net.IPNet{clusterCIDRv4}
+				}(),
+				ServiceCIDR:          nil,
+				SecondaryServiceCIDR: nil,
+				NodeCIDRMaskSizes:    []int{24},
+			}
+
+			fakeNodeHandler := &testutil.FakeNodeHandler{
+				Existing:  tc.existingNodes,
+				Clientset: fake.NewSimpleClientset(),
+			}
+			_, tCtx := ktesting.NewTestContext(t)
+
+			fakeNodeInformer := test.FakeNodeInformer(fakeNodeHandler)
+			nodeList, _ := fakeNodeHandler.List(tCtx, metav1.ListOptions{})
+			allocator, err := NewCIDRRangeAllocator(tCtx, fakeNodeHandler, fakeNodeInformer, allocatorParams, nodeList)
+			if err != nil {
+				t.Fatalf("failed to create CIDRRangeAllocator: %v", err)
+			}
+			rangeAllocator, ok := allocator.(*rangeAllocator)
+			if !ok {
+				t.Fatalf("found non-default implementation of CIDRAllocator")
+			}
+			rangeAllocator.nodesSynced = test.AlwaysReady
+			rangeAllocator.recorder = testutil.NewFakeRecorder()
+
+			rangeAllocator.syncNode(tCtx, tc.nodeKey)
+
+			if len(rangeAllocator.cidrSets) != 1 {
+				t.Fatalf("Expected a single cidrSet, but got %d", len(rangeAllocator.cidrSets))
+			}
+
+			getNextCidr := rangeAllocator.cidrSets[0]
+			nextCidr, _ := getNextCidr.AllocateNext()
+
+			_, expectedNextCIDR, _ := netutils.ParseCIDRSloppy("10.10.0.0/24")
+
+			if tc.shouldReleaseCIDR {
+				if nextCidr.String() != expectedNextCIDR.String() {
+					t.Fatalf("Expected CIDR to be released, but it was not. Got: %v, Expected: %v", nextCidr, expectedNextCIDR)
+				}
+			} else {
+				if nextCidr.String() == expectedNextCIDR.String() {
+					t.Fatalf("Expected CIDR not to be released, but it was. Got: %v", nextCidr)
+				}
+			}
+		})
+	}
+}

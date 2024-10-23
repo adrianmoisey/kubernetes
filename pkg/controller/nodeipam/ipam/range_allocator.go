@@ -270,7 +270,7 @@ func (r *rangeAllocator) syncNode(ctx context.Context, key string) error {
 	// Check the DeletionTimestamp to determine if object is under deletion.
 	if !node.DeletionTimestamp.IsZero() {
 		logger.V(3).Info("node is being deleted", "node", key)
-		return r.ReleaseCIDR(logger, node)
+		return nil
 	}
 	return r.AllocateOrOccupyCIDR(ctx, node)
 }
