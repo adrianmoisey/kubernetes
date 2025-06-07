@@ -5932,6 +5932,7 @@ var supportedServiceIPFamilyPolicy = sets.New(
 func ValidateService(service, oldService *core.Service, isUpdate bool) field.ErrorList {
 	metaPath := field.NewPath("metadata")
 
+	// Avoid validating the name if this is an update, since the name is immutable.
 	nameFn := ValidateServiceName
 	if isUpdate {
 		nameFn = func(_ string, _ bool) []string { return nil }

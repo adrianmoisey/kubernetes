@@ -979,7 +979,7 @@ func TestValidateIngressRuleValue(t *testing.T) {
 
 			for i, err := range errs {
 				if err.Error() != testCase.expectedErrs[i].Error() {
-					t.Fatalf("Expected error: %v, got %v", testCase.expectedErrs[i], err)
+					t.Fatalf("Expected error: %v, got %v", testCase.expectedErrs[i].Error(), err.Error())
 				}
 			}
 		})
@@ -2643,6 +2643,73 @@ func TestValidateServiceCIDRUpdate(t *testing.T) {
 				if errs[i].Error() != expectedErr.Error() {
 					t.Errorf("Expected error %d: %v, got: %v", i, expectedErr, errs[i])
 				}
+			}
+		})
+	}
+}
+
+func TestAllowRelaxedServiceNameValidation(t *testing.T) {
+	basicIngress := func(serviceNames ...string) *networking.Ingress {
+		if len(serviceNames) == 0 {
+			return &networking.Ingress{Spec: networking.IngressSpec{Rules: nil}}
+		}
+		rules := make([]networking.IngressRule, len(serviceNames))
+		for i, name := range serviceNames {
+			rules[i] = networking.IngressRule{
+				IngressRuleValue: networking.IngressRuleValue{
+					HTTP: &networking.HTTPIngressRuleValue{
+						Paths: []networking.HTTPIngressPath{{
+							Backend: networking.IngressBackend{
+								Service: &networking.IngressServiceBackend{
+									Name: name,
+									Port: networking.ServiceBackendPort{Number: 80},
+								},
+							},
+						}},
+					},
+				},
+			}
+		}
+		return &networking.Ingress{Spec: networking.IngressSpec{Rules: rules}}
+	}
+
+	tests := []struct {
+		name    string
+		ingress *networking.Ingress
+		expect  bool
+	}{
+		{
+			name:    "nil ingress",
+			ingress: nil,
+			expect:  false,
+		},
+		{
+			name:    "no rules",
+			ingress: basicIngress(),
+			expect:  false,
+		},
+		{
+			name:    "service name is valid DNS1035 and DNS1123",
+			ingress: basicIngress("validname"),
+			expect:  false,
+		},
+		{
+			name:    "service name is valid DNS1123 but not DNS1035 (contains dash, starts with digit)",
+			ingress: basicIngress("1abc-def"),
+			expect:  true,
+		},
+		{
+			name:    "multiple rules, one triggers relaxed validation",
+			ingress: basicIngress("validname", "1abc-def"),
+			expect:  true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := allowRelaxedServiceNameValidation(tc.ingress)
+			if got != tc.expect {
+				t.Errorf("allowRelaxedServiceNameValidation() = %v, want %v", got, tc.expect)
 			}
 		})
 	}
