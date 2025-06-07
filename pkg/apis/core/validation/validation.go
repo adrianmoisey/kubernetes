@@ -5929,10 +5929,15 @@ var supportedServiceIPFamilyPolicy = sets.New(
 	core.IPFamilyPolicyRequireDualStack)
 
 // ValidateService tests if required fields/annotations of a Service are valid.
-func ValidateService(service, oldService *core.Service) field.ErrorList {
+func ValidateService(service, oldService *core.Service, isUpdate bool) field.ErrorList {
 	metaPath := field.NewPath("metadata")
 
-	allErrs := ValidateObjectMeta(&service.ObjectMeta, true, ValidateServiceName, metaPath)
+	nameFn := ValidateServiceName
+	if isUpdate {
+		nameFn = func(_ string, _ bool) []string { return nil }
+	}
+
+	allErrs := ValidateObjectMeta(&service.ObjectMeta, true, nameFn, metaPath)
 
 	topologyHintsVal, topologyHintsSet := service.Annotations[core.DeprecatedAnnotationTopologyAwareHints]
 	topologyModeVal, topologyModeSet := service.Annotations[core.AnnotationTopologyMode]
@@ -6282,7 +6287,7 @@ func validateServiceTrafficDistribution(service *core.Service) field.ErrorList {
 
 // ValidateServiceCreate validates Services as they are created.
 func ValidateServiceCreate(service *core.Service) field.ErrorList {
-	return ValidateService(service, nil)
+	return ValidateService(service, nil, false)
 }
 
 // ValidateServiceUpdate tests if required fields in the service are set during an update
@@ -6305,7 +6310,7 @@ func ValidateServiceUpdate(service, oldService *core.Service) field.ErrorList {
 
 	allErrs = append(allErrs, validateServiceExternalTrafficFieldsUpdate(oldService, service)...)
 
-	return append(allErrs, ValidateService(service, oldService)...)
+	return append(allErrs, ValidateService(service, oldService, true)...)
 }
 
 // ValidateServiceStatusUpdate tests if required fields in the Service are set when updating status.
