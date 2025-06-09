@@ -702,6 +702,9 @@ func allowRelaxedServiceNameValidation(oldIngress *networking.Ingress) bool {
 	if oldIngress != nil {
 		for _, rule := range oldIngress.Spec.Rules {
 			for _, path := range rule.HTTP.Paths {
+				if path.Backend.Service == nil {
+					continue
+				}
 				serviceName := path.Backend.Service.Name
 				// If a name doesn't validate with NameIsDNS1035Label, but does validate with NameIsDNSLabel,
 				// then we allow it to be used as a Service name in an Ingress.

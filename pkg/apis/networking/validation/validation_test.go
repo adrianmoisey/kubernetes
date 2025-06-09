@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
+	"k8s.io/component-base/featuregate"
 	featuregatetesting "k8s.io/component-base/featuregate/testing"
 	api "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/apis/networking"
@@ -979,7 +980,7 @@ func TestValidateIngressRuleValue(t *testing.T) {
 
 			for i, err := range errs {
 				if err.Error() != testCase.expectedErrs[i].Error() {
-					t.Fatalf("Expected error: %v, got %v", testCase.expectedErrs[i].Error(), err.Error())
+					t.Fatalf("Expected error: %v, got %v", testCase.expectedErrs[i], err)
 				}
 			}
 		})
@@ -1018,6 +1019,7 @@ func TestValidateIngressCreate(t *testing.T) {
 	testCases := map[string]struct {
 		tweakIngress func(ingress *networking.Ingress)
 		expectedErrs field.ErrorList
+		featureGates []featuregate.Feature
 	}{
 		"class field set": {
 			tweakIngress: func(ingress *networking.Ingress) {
@@ -1150,10 +1152,56 @@ func TestValidateIngressCreate(t *testing.T) {
 			},
 			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec").Child("rules").Index(0).Child("http").Child("paths").Index(0).Child("path"), "foo", `must be an absolute path`)},
 		},
+		"ADRIAN create service name with relaxed validation": {
+			tweakIngress: func(ingress *networking.Ingress) {
+				ingress.Spec.Rules = []networking.IngressRule{{
+					IngressRuleValue: networking.IngressRuleValue{
+						HTTP: &networking.HTTPIngressRuleValue{
+							Paths: []networking.HTTPIngressPath{{
+								Path:     "/foo",
+								PathType: &exactPathType,
+								Backend: networking.IngressBackend{
+									Service: &networking.IngressServiceBackend{
+										Name: "1adrian",
+										Port: networking.ServiceBackendPort{Number: 80},
+									},
+								},
+							}},
+						},
+					},
+				}}
+			},
+			featureGates: []featuregate.Feature{features.RelaxedServiceNameValidation},
+		},
+		"ADRIAN fail to create service name with relaxed validation": {
+			tweakIngress: func(ingress *networking.Ingress) {
+				ingress.Spec.Rules = []networking.IngressRule{{
+					IngressRuleValue: networking.IngressRuleValue{
+						HTTP: &networking.HTTPIngressRuleValue{
+							Paths: []networking.HTTPIngressPath{{
+								Path:     "/foo",
+								PathType: &exactPathType,
+								Backend: networking.IngressBackend{
+									Service: &networking.IngressServiceBackend{
+										Name: "1adrian",
+										Port: networking.ServiceBackendPort{Number: 80},
+									},
+								},
+							}},
+						},
+					},
+				}}
+			},
+			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec").Child("rules").Index(0).Child("http").Child("paths").Index(0).Child("backend").Child("service").Child("name"), "1adrian", `a DNS-1035 label must consist of lower case alphanumeric characters or '-', start with an alphabetic character, and end with an alphanumeric character (e.g. 'my-name',  or 'abc-123', regex used for validation is '[a-z]([-a-z0-9]*[a-z0-9])?')`)},
+		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
+			for i := range testCase.featureGates {
+				featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, testCase.featureGates[i], true)
+			}
+
 			newIngress := baseIngress.DeepCopy()
 			testCase.tweakIngress(newIngress)
 			errs := ValidateIngressCreate(newIngress)
@@ -1201,6 +1249,7 @@ func TestValidateIngressUpdate(t *testing.T) {
 	testCases := map[string]struct {
 		tweakIngresses func(newIngress, oldIngress *networking.Ingress)
 		expectedErrs   field.ErrorList
+		featureGates   []featuregate.Feature
 	}{
 		"class field set": {
 			tweakIngresses: func(newIngress, oldIngress *networking.Ingress) {
@@ -1556,6 +1605,160 @@ func TestValidateIngressUpdate(t *testing.T) {
 				}}
 			},
 		},
+		"ADRIAN changing from old validation to new validation - no feature gate expect failure": {
+			tweakIngresses: func(newIngress, oldIngress *networking.Ingress) {
+				oldIngress.Spec.Rules = []networking.IngressRule{{
+					Host: "foo.bar.com",
+					IngressRuleValue: networking.IngressRuleValue{
+						HTTP: &networking.HTTPIngressRuleValue{
+							Paths: []networking.HTTPIngressPath{{
+								Path:     "/foo[",
+								PathType: &implementationPathType,
+								Backend: networking.IngressBackend{
+									Service: &networking.IngressServiceBackend{
+										Name: "adrian",
+										Port: networking.ServiceBackendPort{Number: 80},
+									},
+								},
+							}},
+						},
+					},
+				}}
+				newIngress.Spec.Rules = []networking.IngressRule{{
+					Host: "foo.bar.com",
+					IngressRuleValue: networking.IngressRuleValue{
+						HTTP: &networking.HTTPIngressRuleValue{
+							Paths: []networking.HTTPIngressPath{{
+								Path:     "/bar[",
+								PathType: &implementationPathType,
+								Backend: networking.IngressBackend{
+									Service: &networking.IngressServiceBackend{
+										Name: "1adrian",
+										Port: networking.ServiceBackendPort{Number: 80},
+									},
+								},
+							}},
+						},
+					},
+				}}
+			},
+			expectedErrs: field.ErrorList{field.Invalid(field.NewPath("spec").Child("rules").Index(0).Child("http").Child("paths").Index(0).Child("backend").Child("service").Child("name"), "1adrian", `a DNS-1035 label must consist of lower case alphanumeric characters or '-', start with an alphabetic character, and end with an alphanumeric character (e.g. 'my-name',  or 'abc-123', regex used for validation is '[a-z]([-a-z0-9]*[a-z0-9])?')`)},
+		},
+		"ADRIAN changing from old validation to new validation - WITH feature gate": {
+			tweakIngresses: func(newIngress, oldIngress *networking.Ingress) {
+				oldIngress.Spec.Rules = []networking.IngressRule{{
+					Host: "foo.bar.com",
+					IngressRuleValue: networking.IngressRuleValue{
+						HTTP: &networking.HTTPIngressRuleValue{
+							Paths: []networking.HTTPIngressPath{{
+								Path:     "/foo[",
+								PathType: &implementationPathType,
+								Backend: networking.IngressBackend{
+									Service: &networking.IngressServiceBackend{
+										Name: "adrian",
+										Port: networking.ServiceBackendPort{Number: 80},
+									},
+								},
+							}},
+						},
+					},
+				}}
+				newIngress.Spec.Rules = []networking.IngressRule{{
+					Host: "foo.bar.com",
+					IngressRuleValue: networking.IngressRuleValue{
+						HTTP: &networking.HTTPIngressRuleValue{
+							Paths: []networking.HTTPIngressPath{{
+								Path:     "/bar[",
+								PathType: &implementationPathType,
+								Backend: networking.IngressBackend{
+									Service: &networking.IngressServiceBackend{
+										Name: "1adrian",
+										Port: networking.ServiceBackendPort{Number: 80},
+									},
+								},
+							}},
+						},
+					},
+				}}
+			},
+			featureGates: []featuregate.Feature{features.RelaxedServiceNameValidation},
+		},
+		"ADRIAN changing from old validation to new validation - WITHOUT as it already is on the new feature": {
+			tweakIngresses: func(newIngress, oldIngress *networking.Ingress) {
+				oldIngress.Spec.Rules = []networking.IngressRule{{
+					Host: "foo.bar.com",
+					IngressRuleValue: networking.IngressRuleValue{
+						HTTP: &networking.HTTPIngressRuleValue{
+							Paths: []networking.HTTPIngressPath{{
+								Path:     "/",
+								PathType: &implementationPathType,
+								Backend: networking.IngressBackend{
+									Service: &networking.IngressServiceBackend{
+										Name: "1adrian",
+										Port: networking.ServiceBackendPort{Number: 80},
+									},
+								},
+							}},
+						},
+					},
+				}}
+				newIngress.Spec.Rules = []networking.IngressRule{{
+					Host: "foo.bar.com",
+					IngressRuleValue: networking.IngressRuleValue{
+						HTTP: &networking.HTTPIngressRuleValue{
+							Paths: []networking.HTTPIngressPath{{
+								Path:     "/",
+								PathType: &implementationPathType,
+								Backend: networking.IngressBackend{
+									Service: &networking.IngressServiceBackend{
+										Name: "2adrian",
+										Port: networking.ServiceBackendPort{Number: 80},
+									},
+								},
+							}},
+						},
+					},
+				}}
+			},
+		},
+		"ADRIAN changing from new validation to old validation ": {
+			tweakIngresses: func(newIngress, oldIngress *networking.Ingress) {
+				oldIngress.Spec.Rules = []networking.IngressRule{{
+					Host: "foo.bar.com",
+					IngressRuleValue: networking.IngressRuleValue{
+						HTTP: &networking.HTTPIngressRuleValue{
+							Paths: []networking.HTTPIngressPath{{
+								Path:     "/",
+								PathType: &implementationPathType,
+								Backend: networking.IngressBackend{
+									Service: &networking.IngressServiceBackend{
+										Name: "1adrian",
+										Port: networking.ServiceBackendPort{Number: 80},
+									},
+								},
+							}},
+						},
+					},
+				}}
+				newIngress.Spec.Rules = []networking.IngressRule{{
+					Host: "foo.bar.com",
+					IngressRuleValue: networking.IngressRuleValue{
+						HTTP: &networking.HTTPIngressRuleValue{
+							Paths: []networking.HTTPIngressPath{{
+								Path:     "/",
+								PathType: &implementationPathType,
+								Backend: networking.IngressBackend{
+									Service: &networking.IngressServiceBackend{
+										Name: "adrian",
+										Port: networking.ServiceBackendPort{Number: 80},
+									},
+								},
+							}},
+						},
+					},
+				}}
+			},
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -1563,6 +1766,9 @@ func TestValidateIngressUpdate(t *testing.T) {
 			newIngress := baseIngress.DeepCopy()
 			oldIngress := baseIngress.DeepCopy()
 			testCase.tweakIngresses(newIngress, oldIngress)
+			for i := range testCase.featureGates {
+				featuregatetesting.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, testCase.featureGates[i], true)
+			}
 
 			errs := ValidateIngressUpdate(newIngress, oldIngress)
 

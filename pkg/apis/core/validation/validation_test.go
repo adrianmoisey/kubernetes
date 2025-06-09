@@ -16764,6 +16764,19 @@ func TestValidateServiceCreate(t *testing.T) {
 			tweakSvc: func(s *core.Service) {
 				s.Spec.TrafficDistribution = ptr.To("PreferSameNode")
 			},
+		}, {
+
+			name:         "ADRIAN - 1",
+			featureGates: []featuregate.Feature{features.RelaxedServiceNameValidation},
+			tweakSvc: func(s *core.Service) {
+				s.Name = "1adrian"
+			},
+			numErrs: 0,
+		}, {
+			name: "invalid: - 2",
+			tweakSvc: func(s *core.Service) {
+				s.Name = "1adrian"
+			},
 			numErrs: 1,
 		},
 	}
