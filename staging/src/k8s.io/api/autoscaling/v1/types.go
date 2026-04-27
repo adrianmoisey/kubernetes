@@ -156,6 +156,9 @@ type ScaleStatus struct {
 	// replicas is the actual number of observed instances of the scaled object.
 	Replicas int32 `json:"replicas" protobuf:"varint,1,opt,name=replicas"`
 
+	// readyReplicas is the number of ready instances of the scaled object.
+	ReadyReplicas *int32
+
 	// selector is the label query over pods that should match the replicas count. This is same
 	// as the label selector but in the string format to avoid introspection
 	// by clients. The string will be in the same format as the query-param syntax.

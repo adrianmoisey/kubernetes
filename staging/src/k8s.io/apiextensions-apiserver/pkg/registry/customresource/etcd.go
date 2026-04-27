@@ -150,6 +150,7 @@ type ScaleREST struct {
 	store               *genericregistry.Store
 	specReplicasPath    string
 	statusReplicasPath  string
+	readyReplicasPath   string
 	labelSelectorPath   string
 	parentGV            schema.GroupVersion
 	replicasPathMapping managedfields.ResourcePathMappings
@@ -175,7 +176,7 @@ func (r *ScaleREST) Get(ctx context.Context, name string, options *metav1.GetOpt
 	}
 	cr := obj.(*unstructured.Unstructured)
 
-	scaleObject, replicasFound, err := scaleFromCustomResource(cr, r.specReplicasPath, r.statusReplicasPath, r.labelSelectorPath)
+	scaleObject, replicasFound, err := scaleFromCustomResource(cr, r.specReplicasPath, r.statusReplicasPath, r.readyReplicasPath, r.labelSelectorPath)
 	if err != nil {
 		return nil, err
 	}
@@ -199,8 +200,8 @@ func (r *ScaleREST) Update(ctx context.Context, name string, objInfo rest.Update
 		ctx,
 		name,
 		scaleObjInfo,
-		toScaleCreateValidation(createValidation, r.specReplicasPath, r.statusReplicasPath, r.labelSelectorPath),
-		toScaleUpdateValidation(updateValidation, r.specReplicasPath, r.statusReplicasPath, r.labelSelectorPath),
+		toScaleCreateValidation(createValidation, r.specReplicasPath, r.statusReplicasPath, r.readyReplicasPath, r.labelSelectorPath),
+		toScaleUpdateValidation(updateValidation, r.specReplicasPath, r.statusReplicasPath, r.readyReplicasPath, r.labelSelectorPath),
 		false,
 		options,
 	)
@@ -209,7 +210,7 @@ func (r *ScaleREST) Update(ctx context.Context, name string, objInfo rest.Update
 	}
 	cr := obj.(*unstructured.Unstructured)
 
-	newScale, _, err := scaleFromCustomResource(cr, r.specReplicasPath, r.statusReplicasPath, r.labelSelectorPath)
+	newScale, _, err := scaleFromCustomResource(cr, r.specReplicasPath, r.statusReplicasPath, r.readyReplicasPath, r.labelSelectorPath)
 	if err != nil {
 		return nil, false, apierrors.NewBadRequest(err.Error())
 	}
@@ -217,9 +218,9 @@ func (r *ScaleREST) Update(ctx context.Context, name string, objInfo rest.Update
 	return newScale, false, err
 }
 
-func toScaleCreateValidation(f rest.ValidateObjectFunc, specReplicasPath, statusReplicasPath, labelSelectorPath string) rest.ValidateObjectFunc {
+func toScaleCreateValidation(f rest.ValidateObjectFunc, specReplicasPath, statusReplicasPath, readyReplicasPath, labelSelectorPath string) rest.ValidateObjectFunc {
 	return func(ctx context.Context, obj runtime.Object) error {
-		scale, _, err := scaleFromCustomResource(obj.(*unstructured.Unstructured), specReplicasPath, statusReplicasPath, labelSelectorPath)
+		scale, _, err := scaleFromCustomResource(obj.(*unstructured.Unstructured), specReplicasPath, statusReplicasPath, readyReplicasPath, labelSelectorPath)
 		if err != nil {
 			return err
 		}
@@ -227,13 +228,13 @@ func toScaleCreateValidation(f rest.ValidateObjectFunc, specReplicasPath, status
 	}
 }
 
-func toScaleUpdateValidation(f rest.ValidateObjectUpdateFunc, specReplicasPath, statusReplicasPath, labelSelectorPath string) rest.ValidateObjectUpdateFunc {
+func toScaleUpdateValidation(f rest.ValidateObjectUpdateFunc, specReplicasPath, statusReplicasPath, readyReplicasPath, labelSelectorPath string) rest.ValidateObjectUpdateFunc {
 	return func(ctx context.Context, obj, old runtime.Object) error {
-		newScale, _, err := scaleFromCustomResource(obj.(*unstructured.Unstructured), specReplicasPath, statusReplicasPath, labelSelectorPath)
+		newScale, _, err := scaleFromCustomResource(obj.(*unstructured.Unstructured), specReplicasPath, statusReplicasPath, readyReplicasPath, labelSelectorPath)
 		if err != nil {
 			return err
 		}
-		oldScale, _, err := scaleFromCustomResource(old.(*unstructured.Unstructured), specReplicasPath, statusReplicasPath, labelSelectorPath)
+		oldScale, _, err := scaleFromCustomResource(old.(*unstructured.Unstructured), specReplicasPath, statusReplicasPath, readyReplicasPath, labelSelectorPath)
 		if err != nil {
 			return err
 		}
@@ -248,7 +249,7 @@ func splitReplicasPath(replicasPath string) []string {
 
 // scaleFromCustomResource returns a scale subresource for a customresource and a bool signalling wether
 // the specReplicas value was found.
-func scaleFromCustomResource(cr *unstructured.Unstructured, specReplicasPath, statusReplicasPath, labelSelectorPath string) (*autoscalingv1.Scale, bool, error) {
+func scaleFromCustomResource(cr *unstructured.Unstructured, specReplicasPath, statusReplicasPath, readyReplicasPath, labelSelectorPath string) (*autoscalingv1.Scale, bool, error) {
 	specReplicas, foundSpecReplicas, err := unstructured.NestedInt64(cr.UnstructuredContent(), splitReplicasPath(specReplicasPath)...)
 	if err != nil {
 		return nil, false, err
@@ -261,6 +262,11 @@ func scaleFromCustomResource(cr *unstructured.Unstructured, specReplicasPath, st
 		return nil, false, err
 	} else if !found {
 		statusReplicas = 0
+	}
+
+	readyReplicas, readyReplicasfound, err := unstructured.NestedInt64(cr.UnstructuredContent(), splitReplicasPath(readyReplicasPath)...)
+	if err != nil {
+		return nil, false, err
 	}
 
 	var labelSelector string
@@ -293,6 +299,10 @@ func scaleFromCustomResource(cr *unstructured.Unstructured, specReplicasPath, st
 		},
 	}
 
+	if readyReplicasfound {
+		*scale.Status.ReadyReplicas = int32(readyReplicas)
+	}
+
 	return scale, foundSpecReplicas, nil
 }
 
@@ -300,6 +310,7 @@ type scaleUpdatedObjectInfo struct {
 	reqObjInfo          rest.UpdatedObjectInfo
 	specReplicasPath    string
 	statusReplicasPath  string
+	readyReplicasPath   string
 	labelSelectorPath   string
 	parentGV            schema.GroupVersion
 	replicasPathMapping managedfields.ResourcePathMappings
@@ -319,7 +330,7 @@ func (i *scaleUpdatedObjectInfo) UpdatedObject(ctx context.Context, oldObj runti
 		i.replicasPathMapping,
 	)
 
-	oldScale, replicasFound, err := scaleFromCustomResource(cr, i.specReplicasPath, i.statusReplicasPath, i.labelSelectorPath)
+	oldScale, replicasFound, err := scaleFromCustomResource(cr, i.specReplicasPath, i.statusReplicasPath, i.readyReplicasPath, i.labelSelectorPath)
 	if err != nil {
 		return nil, err
 	}

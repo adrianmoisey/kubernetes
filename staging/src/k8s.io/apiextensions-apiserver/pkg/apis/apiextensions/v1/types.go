@@ -471,6 +471,15 @@ type CustomResourceSubresourceScale struct {
 	// If there is no value under the given path in the custom resource, the `status.replicas` value in the `/scale` subresource
 	// will default to 0.
 	StatusReplicasPath string `json:"statusReplicasPath" protobuf:"bytes,2,opt,name=statusReplicasPath"`
+
+	// readyReplicasPath defines the JSON path inside of a custom resource that corresponds to Scale `status.readyReplicas`.
+	// Only JSON paths without the array notation are allowed.
+	// Must be a JSON Path under `.status`.
+	// If there is no value under the given path in the custom resource, the `status.readyReplicas` value in the `/scale` subresource
+	// will default to 0.
+	// +optional
+	ReadyReplicasPath *string `json:"readyReplicasPath" protobuf:"bytes,3,opt,name=readyReplicasPath"`
+
 	// labelSelectorPath defines the JSON path inside of a custom resource that corresponds to Scale `status.selector`.
 	// Only JSON paths without the array notation are allowed.
 	// Must be a JSON Path under `.status` or `.spec`.
@@ -481,7 +490,7 @@ type CustomResourceSubresourceScale struct {
 	// If there is no value under the given path in the custom resource, the `status.selector` value in the `/scale`
 	// subresource will default to the empty string.
 	// +optional
-	LabelSelectorPath *string `json:"labelSelectorPath,omitempty" protobuf:"bytes,3,opt,name=labelSelectorPath"`
+	LabelSelectorPath *string `json:"labelSelectorPath,omitempty" protobuf:"bytes,4,opt,name=labelSelectorPath"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

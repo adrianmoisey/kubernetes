@@ -249,8 +249,9 @@ func scaleFromRC(rc *api.ReplicationController) *autoscaling.Scale {
 			Replicas: *rc.Spec.Replicas,
 		},
 		Status: autoscaling.ScaleStatus{
-			Replicas: rc.Status.Replicas,
-			Selector: labels.SelectorFromSet(rc.Spec.Selector).String(),
+			Replicas:      rc.Status.Replicas,
+			Selector:      labels.SelectorFromSet(rc.Spec.Selector).String(),
+			ReadyReplicas: rc.Status.ReadyReplicas,
 		},
 	}
 }

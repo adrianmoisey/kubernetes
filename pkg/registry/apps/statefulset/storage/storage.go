@@ -275,8 +275,9 @@ func scaleFromStatefulSet(ss *apps.StatefulSet) (*autoscaling.Scale, error) {
 			Replicas: ss.Spec.Replicas,
 		},
 		Status: autoscaling.ScaleStatus{
-			Replicas: ss.Status.Replicas,
-			Selector: selector.String(),
+			Replicas:      ss.Status.Replicas,
+			Selector:      selector.String(),
+			ReadyReplicas: ss.Status.ReadyReplicas,
 		},
 	}, nil
 }

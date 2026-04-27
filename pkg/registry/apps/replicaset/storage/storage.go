@@ -281,8 +281,9 @@ func scaleFromReplicaSet(rs *apps.ReplicaSet) (*autoscaling.Scale, error) {
 			Replicas: rs.Spec.Replicas,
 		},
 		Status: autoscaling.ScaleStatus{
-			Replicas: rs.Status.Replicas,
-			Selector: selector.String(),
+			Replicas:      rs.Status.Replicas,
+			Selector:      selector.String(),
+			ReadyReplicas: rs.Status.ReadyReplicas,
 		},
 	}, nil
 }

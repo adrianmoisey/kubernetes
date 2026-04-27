@@ -386,8 +386,9 @@ func scaleFromDeployment(deployment *apps.Deployment) (*autoscaling.Scale, error
 			Replicas: deployment.Spec.Replicas,
 		},
 		Status: autoscaling.ScaleStatus{
-			Replicas: deployment.Status.Replicas,
-			Selector: selector.String(),
+			Replicas:      deployment.Status.Replicas,
+			Selector:      selector.String(),
+			ReadyReplicas: deployment.Status.ReadyReplicas,
 		},
 	}, nil
 }
